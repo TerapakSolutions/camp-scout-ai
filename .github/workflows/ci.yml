@@ -82,6 +82,58 @@ jobs:
           grep -q 'https://campscout.terapak.com/campgrounds' docs/sitemap.xml
           grep -q 'Sitemap:' docs/robots.txt
 
+  # Cypress e2e against the PRODUCTION server (the artifact Fly ships: `build:fly` + server/production.mjs),
+  # signed in via a cookie minted with the app's real signSession (see cypress.config.js).
+  # NON-BLOCKING for now: deliberately NOT in `verify.needs`, and deliberately NO `continue-on-error` —
+  # that would paint a failing run green. A red e2e shows red on the PR but blocks neither merge nor
+  # deploy, because `verify` is the only required check. Promote it into `verify.needs` once it has
+  # been green for a while.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # e2e-only dummy: signs the test session cookie; shared by the server and Cypress. Not a real secret.
+      SESSION_SECRET: e2e-only-session-secret-not-used-anywhere-else
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      # Plain `npm ci` installs the Cypress binary (nothing in this repo sets CYPRESS_INSTALL_BINARY=0).
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify Cypress binary
+        run: npx cypress verify
+      # build:fly = base '/', out dir dist/ — what the Dockerfile builds. Plain `build` uses the
+      # /camp-scout-ai/ base and the routes would not match.
+      - name: Build (Fly flavour)
+        run: npm run build:fly
+      - name: Start production server
+        env:
+          PORT: '5173'
+          DATABASE_PATH: ${{ runner.temp }}/campscout-e2e.sqlite
+        run: |
+          nohup npx tsx server/production.mjs > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf -o /dev/null http://localhost:5173/health && echo "server up" && exit 0
+            sleep 1
+          done
+          echo "::error::server did not answer /health within 30s"; cat "$RUNNER_TEMP/server.log"; exit 1
+      - name: Cypress run
+        run: npx cypress run --browser electron
+      - name: Upload Cypress screenshots, videos and server log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-artifacts
+          path: |
+            cypress/screenshots
+            cypress/videos
+            ${{ runner.temp }}/server.log
+          if-no-files-found: ignore
+          retention-days: 7
+
   # 🔴 `verify` IS THE REQUIRED STATUS CHECK ON main. Keep the job id `verify` and give it NO
   # `name:` — the check name must stay exactly `verify` or every PR blocks waiting for a check
   # that never reports.
