@@ -1,0 +1,16 @@
+Copied VERBATIM (byte-identical) from ~/mycode/.claude-global-audit commit 7250a32
+(installed in ~/.claude/hooks on 2026-10-30). Update by re-copying; do not edit here.
+
+History: the gates were live-verified at 119abfa; 7250a32 adds only repo_gates_own() (lib.sh)
+and its two call sites (lint-changed-file.sh, stop-gates.sh) -- the global copy's
+"skip a repo that ships its own copy" dedupe. In THIS copy that check always returns false
+(the script dir is inside the repo), so the repo's gates always run.
+Header comments say "GLOBAL" because that is where the scripts come from.
+Not copied: pr-gate.sh, review-stamp.sh (personal PR-review gate), stop-typecheck.sh (superseded).
+lib.sh still contains the review-stamp helpers those use; nothing here calls them.
+
+sha256:
+3422ba4310fbb400e4f45a9755bc97bdb90a3b99e41b9daffb8cf019320656fb  lib.sh
+6c79b87962489b3c3b019eb8ec73a6b43967a7168d9e350de191f54a3fa5f4c6  lint-changed-file.sh
+3973da3145237beb0ab80a45091c20720c595ed59a634432c0a556806dfe62ca  stop-gates.sh
+fed56ec1ed6d643c72f698aee176f131ff2011bbe57dd1d6c8ef5db12e96e6d9  track-touched.sh
