@@ -5,6 +5,8 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
+import { sql } from 'drizzle-orm'
+
 import { buildAiDashboard } from '../ai/aiDashboard.js'
 import { queryRecentAuditLog } from '../ai/aiAuditLog.js'
 import { renderPrometheusMetrics } from '../ai/aiMetrics.js'
@@ -37,6 +39,9 @@ import { handleSummaryRequest } from './summaryHandler.js'
 import { parseCookies, SESSION_COOKIE } from '../auth/cookies.js'
 import { isEmailAllowed } from '../auth/allowlist.js'
 import { verifySession } from '../auth/jwt.js'
+import { getDb } from '../db/index.js'
+import { getWatcherStatus } from '../availability/scheduler.js'
+import { evaluateReadiness, type ReadinessResult } from '../health/readiness.js'
 import {
   JsonBodyTooLargeError,
   resolveMaxJsonBodyBytes,
@@ -46,6 +51,8 @@ export const ASK_ROUTE_PATH = '/api/ask'
 export const SUMMARY_ROUTE_PATH = '/api/summary'
 export const DONATE_ROUTE_PATH = '/api/donate'
 export const HEALTH_ROUTE_PATH = '/health'
+/** Readiness (DB + watcher); `/health` stays plain liveness. Fly checks both (fly.toml). */
+export const HEALTH_READY_ROUTE_PATH = '/health/ready'
 export const RUNTIME_CONFIG_PATH = '/camp-scout-runtime.js'
 export const METRICS_ROUTE_PATH = '/metrics'
 export const AI_DASHBOARD_ROUTE_PATH = '/api/ai/dashboard'
@@ -66,6 +73,19 @@ export interface AskRouteMiddlewareOptions {
   skipApiProtection?: boolean
   protectedAccess?: boolean
   persistAudit?: boolean
+  /** Override the readiness verdict (tests). Default: real DB + watcher state. */
+  readiness?: () => ReadinessResult
+}
+
+/** Real readiness: open the DB and run a trivial query; read the in-process watcher state. */
+export function evaluateServerReadiness(): ReadinessResult {
+  return evaluateReadiness({
+    checkDb: () => {
+      getDb().get(sql`select 1`)
+    },
+    watcherEnabled: process.env.WATCHER_ENABLED === 'true',
+    watcherStatus: getWatcherStatus,
+  })
 }
 
 interface SendJsonResponseOptions {
@@ -276,6 +296,19 @@ export function createAskRouteMiddleware(options: AskRouteMiddlewareOptions = {}
       }
 
       sendJsonResponse(res, 200, { status: 'ok' }, { correlationId })
+      return
+    }
+
+    if (pathname === HEALTH_READY_ROUTE_PATH) {
+      if (req.method !== 'GET') {
+        res.setHeader('Allow', 'GET')
+        sendJsonResponse(res, 405, { error: 'Method not allowed. Use GET.' }, { correlationId })
+        return
+      }
+
+      const verdict = (options.readiness ?? evaluateServerReadiness)()
+      res.setHeader('Cache-Control', 'no-store')
+      sendJsonResponse(res, verdict.statusCode, verdict.body, { correlationId })
       return
     }
 

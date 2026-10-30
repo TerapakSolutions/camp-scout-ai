@@ -54,6 +54,21 @@ primary_region = 'sjc'
     method = 'GET'
     path = '/health'
 
+  # READINESS: 200 only when SQLite opens + answers `select 1` and (WATCHER_ENABLED) the watcher
+  # completed a tick within 2 x WATCH_POLL_INTERVAL_SECONDS (600s). 503 body names the failed check.
+  # Fly docs: a machine failing a service check "won't be routed to until its checks start passing",
+  # and "a failing check won't cause the Machine to restart". This app is ONE machine, so a failing
+  # readiness check takes the whole site out of routing with no automatic recovery — which is why the
+  # watcher threshold is generous. grace_period (60s = Fly's maximum; flyctl lowers anything above it)
+  # covers boot: migrations run on the first getDb(),
+  # and the first watcher tick lands 30s after the server binds.
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '60s'
+    method = 'GET'
+    path = '/health/ready'
+
 [[vm]]
   memory = '512mb'
   cpu_kind = 'shared'

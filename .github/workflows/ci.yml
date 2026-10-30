@@ -221,13 +221,16 @@ jobs:
           echo "::error title=Deploy not verified::campscout is not confirmed on ${EXPECTED:0:12} (mismatching machines listed above)."
           exit 1
 
+      # /health/ready, not /health: proves the DB opens and answers and the watcher is running, not just
+      # that the process serves HTTP. Safe right after boot: before the first tick the watcher is judged
+      # from its start time, so a fresh machine reads ready (src/server/health/readiness.ts).
       - name: smoke check
         run: |
           for i in 1 2 3 4 5 6; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' https://campscout.terapak.com/health) && [ "$code" = 200 ] && echo "health 200" && exit 0
+            code=$(curl -s -o /tmp/ready.json -w '%{http_code}' https://campscout.terapak.com/health/ready) && [ "$code" = 200 ] && echo "ready 200: $(cat /tmp/ready.json)" && exit 0
             sleep 10
           done
-          echo "health check failed after deploy (last status: $code)"; exit 1
+          echo "readiness check failed after deploy (last status: $code, body: $(cat /tmp/ready.json 2>/dev/null))"; exit 1
 
       # GA4's Measurement ID is a BUILD arg from fly.toml [build.args]: if a build ever lost it, analytics
       # would switch off silently (no error anywhere). So prove the live bundle still carries the ID.
