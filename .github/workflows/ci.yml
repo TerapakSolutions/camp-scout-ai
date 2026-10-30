@@ -176,3 +176,16 @@ jobs:
             sleep 10
           done
           echo "health check failed after deploy (last status: $code)"; exit 1
+
+      # GA4's Measurement ID is a BUILD arg from fly.toml [build.args]. This job also passes
+      # --build-arg GIT_SHA on the command line; if that ever replaced the toml args instead of adding
+      # to them, analytics would switch off silently. So prove the live bundle still carries the ID.
+      - name: GA4 Measurement ID still in the live bundle
+        run: |
+          want=$(grep -E '^\s*VITE_GA_MEASUREMENT_ID\s*=' fly.toml | sed -E 's/.*=\s*"([^"]+)".*/\1/')
+          [ -n "$want" ] || { echo "no VITE_GA_MEASUREMENT_ID in fly.toml — nothing to check"; exit 0; }
+          js=$(curl -s https://campscout.terapak.com/ | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+          [ -n "$js" ] || { echo "::error::could not find the main bundle in the live HTML"; exit 1; }
+          curl -s "https://campscout.terapak.com$js" | grep -q "$want" \
+            && echo "GA ID $want present in $js" \
+            || { echo "::error::GA Measurement ID $want is MISSING from live bundle $js — analytics is off"; exit 1; }
