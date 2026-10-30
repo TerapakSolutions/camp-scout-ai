@@ -35,6 +35,7 @@ import { handleAskRequest, INVALID_JSON_ERROR } from './askHandler.js'
 import { handleDonateRequest } from './donateHandler.js'
 import { handleSummaryRequest } from './summaryHandler.js'
 import { parseCookies, SESSION_COOKIE } from '../auth/cookies.js'
+import { isEmailAllowed } from '../auth/allowlist.js'
 import { verifySession } from '../auth/jwt.js'
 import {
   JsonBodyTooLargeError,
@@ -131,16 +132,21 @@ export function sendJsonResponse(
 }
 
 export function sendRuntimeConfigScript(req: IncomingMessage, res: ServerResponse): void {
-  const token = resolveConfiguredApiToken() ?? ''
-  const session = verifySession(parseCookies(req)[SESSION_COOKIE])
+  // The API token is the server's shared secret for the AI + ops routes. Only a
+  // signed-in, allow-listed user gets it — the same check as requireUser() /
+  // /auth/me. Anonymous visitors only ever see the SignInGate, which needs
+  // the runtime object to exist (hasRuntimeConfig) but not the token.
+  const verified = verifySession(parseCookies(req)[SESSION_COOKIE])
+  const session = verified && isEmailAllowed(verified.email) ? verified : null
   const user = session
     ? { email: session.email, name: session.name, picture: session.picture }
     : null
+  const apiToken = session ? (resolveConfiguredApiToken() ?? null) : null
 
   res.statusCode = 200
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8')
   res.setHeader('Cache-Control', 'no-store')
-  res.end(`window.__CAMP_SCOUT_RUNTIME__=${JSON.stringify({ apiToken: token, user })};`)
+  res.end(`window.__CAMP_SCOUT_RUNTIME__=${JSON.stringify({ apiToken, user })};`)
 }
 
 function parseOptionalQueryInt(value: string | null): number | undefined {
