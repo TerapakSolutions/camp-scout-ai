@@ -43,9 +43,13 @@ Single npm package at the repo root (use npm, not pnpm: `package-lock.json` is t
   no consent banner). `page_location` / `page_path` keep ONLY the query keys `region`, `amenity`,
   `tag`; everything else (Stripe `session_id`, free text, coordinates) is stripped.
   GA only runs on the production host `campscout.terapak.com`.
-- `/camp-scout-runtime.js` puts the server's API token in the page ONLY for a signed-in,
-  allow-listed session (`sendRuntimeConfigScript` in `src/server/api/askRoute.ts`). Anonymous
-  visitors get the runtime object without the token.
+- `/camp-scout-runtime.js` puts the server's API token in the page ONLY for a signed-in session
+  that passes `isEmailAllowed` (`sendRuntimeConfigScript` in `src/server/api/askRoute.ts`).
+  Anonymous visitors get the runtime object without the token.
+- **Access is open to any Google account** (since 2026-10-30: the `ALLOWED_EMAILS` Fly secret is
+  unset, and `src/server/auth/allowlist.ts` treats "no list" as "everyone"). Setting `ALLOWED_EMAILS`
+  (comma-separated) makes the instance private again. With open access, AI spend is bounded only by
+  the AI budget limits (README "AI Operations") — keep them set.
 
 ## Lint vs typecheck
 `.eslintrc.js` has no TypeScript parser: it lints JS/JSX only. TS files are checked by `tsc`
