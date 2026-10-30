@@ -7,7 +7,7 @@ interface CampScoutRuntimeUser {
 }
 
 interface CampScoutRuntimeConfig {
-  apiToken?: string
+  apiToken?: string | null
   user?: CampScoutRuntimeUser | null
 }
 

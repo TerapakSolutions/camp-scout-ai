@@ -30,6 +30,8 @@ import {
 } from '../rag/groundedAnswerGenerator.js'
 import { EMPTY_QUESTION_ERROR } from './askHandler.js'
 import { DONATIONS_NOT_CONFIGURED_ERROR } from './donateHandler.js'
+import { SESSION_COOKIE } from '../auth/cookies.js'
+import { signSession } from '../auth/jwt.js'
 
 function createMockResponse() {
   /** @type {{ statusCode?: number, headers: Record<string, string>, body?: string, ended: boolean }} */
@@ -125,25 +127,6 @@ describe('createAskRouteMiddleware', () => {
     expect(payload.status).toBe(SUCCESS_STATUS)
     expect(payload.answer).toContain('Fake provider answer for:')
     expect(payload.citations.length).toBeGreaterThan(0)
-  })
-
-  it('serves the browser runtime config script', async () => {
-    const middleware = createAskRouteMiddleware({ answerProvider: fakeAnswerProvider })
-    const req = createMockRequest({
-      method: 'GET',
-      url: RUNTIME_CONFIG_PATH,
-      body: null,
-    })
-    const { res, state } = createMockResponse()
-
-    await middleware(req, res, jest.fn())
-
-    expect(state.statusCode).toBe(200)
-    expect(state.headers['content-type']).toBe('application/javascript; charset=utf-8')
-    expect(state.headers['cache-control']).toBe('no-store')
-    expect(state.body).toBe(
-      'window.__CAMP_SCOUT_RUNTIME__={"apiToken":"test-api-token","user":null};'
-    )
   })
 
   it('blocks unauthenticated access to /api/ask', async () => {
@@ -341,5 +324,92 @@ describe('sendJsonResponse', () => {
     expect(state.headers['content-type']).toBe('application/json; charset=utf-8')
     expect(state.body).toBe('{"ok":true}')
     expect(state.ended).toBe(true)
+  })
+})
+
+describe('runtime config script (/camp-scout-runtime.js)', () => {
+  const TOKEN = 'test-api-token'
+  const prevSecret = process.env.SESSION_SECRET
+  const prevAllowed = process.env.ALLOWED_EMAILS
+  const allowedUser = { uid: 'u1', email: 'steve@example.com', name: 'Steve', picture: null }
+
+  beforeEach(() => {
+    process.env[CAMP_SCOUT_API_TOKEN_ENV] = TOKEN
+    process.env.SESSION_SECRET = 'test-session-secret-at-least-16'
+    process.env.ALLOWED_EMAILS = 'steve@example.com'
+  })
+
+  afterAll(() => {
+    if (prevSecret === undefined) delete process.env.SESSION_SECRET
+    else process.env.SESSION_SECRET = prevSecret
+    if (prevAllowed === undefined) delete process.env.ALLOWED_EMAILS
+    else process.env.ALLOWED_EMAILS = prevAllowed
+  })
+
+  async function fetchRuntime(headers = {}) {
+    const middleware = createAskRouteMiddleware({ answerProvider: fakeAnswerProvider })
+    const req = createMockRequest({ method: 'GET', url: RUNTIME_CONFIG_PATH, body: null, headers })
+    const { res, state } = createMockResponse()
+    await middleware(req, res, jest.fn())
+    return state
+  }
+
+  function parseRuntime(body) {
+    const prefix = 'window.__CAMP_SCOUT_RUNTIME__='
+    expect(body.startsWith(prefix)).toBe(true)
+    return JSON.parse(body.slice(prefix.length, -1))
+  }
+
+  it('serves no API token to an anonymous visitor', async () => {
+    const state = await fetchRuntime({})
+
+    expect(state.statusCode).toBe(200)
+    expect(state.headers['content-type']).toBe('application/javascript; charset=utf-8')
+    expect(state.headers['cache-control']).toBe('no-store')
+    expect(state.body).not.toContain(TOKEN)
+    expect(parseRuntime(state.body)).toEqual({ apiToken: null, user: null })
+  })
+
+  it('serves the API token to a signed-in, allow-listed user', async () => {
+    const state = await fetchRuntime({ cookie: `${SESSION_COOKIE}=${signSession(allowedUser)}` })
+
+    expect(state.headers['cache-control']).toBe('no-store')
+    expect(state.body).toContain(TOKEN)
+    expect(parseRuntime(state.body)).toEqual({
+      apiToken: TOKEN,
+      user: { email: 'steve@example.com', name: 'Steve', picture: null },
+    })
+  })
+
+  it('serves no API token for a forged/garbage session cookie', async () => {
+    const state = await fetchRuntime({ cookie: `${SESSION_COOKIE}=not.a.jwt` })
+
+    expect(state.body).not.toContain(TOKEN)
+    expect(parseRuntime(state.body)).toEqual({ apiToken: null, user: null })
+  })
+
+  it('serves no API token for a session signed with a different secret', async () => {
+    const forged = signSession(allowedUser)
+    process.env.SESSION_SECRET = 'a-completely-different-secret-xx'
+    const state = await fetchRuntime({ cookie: `${SESSION_COOKIE}=${forged}` })
+
+    expect(state.body).not.toContain(TOKEN)
+    expect(parseRuntime(state.body)).toEqual({ apiToken: null, user: null })
+  })
+
+  it('serves no API token for an expired session cookie', async () => {
+    const expired = signSession(allowedUser, -60)
+    const state = await fetchRuntime({ cookie: `${SESSION_COOKIE}=${expired}` })
+
+    expect(state.body).not.toContain(TOKEN)
+    expect(parseRuntime(state.body)).toEqual({ apiToken: null, user: null })
+  })
+
+  it('serves no API token (and no user) for a valid session whose email is not allow-listed', async () => {
+    const outsider = signSession({ uid: 'u2', email: 'stranger@example.com', name: 'X' })
+    const state = await fetchRuntime({ cookie: `${SESSION_COOKIE}=${outsider}` })
+
+    expect(state.body).not.toContain(TOKEN)
+    expect(parseRuntime(state.body)).toEqual({ apiToken: null, user: null })
   })
 })
