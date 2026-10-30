@@ -1,10 +1,19 @@
 name: CI
 
+# Every PR and every push to main runs `verify`. A push to main then DEPLOYS to Fly — before
+# 2026-10-29 nothing deployed automatically, and prod drifted 52 commits away from main for three
+# months because every release was a hand `fly deploy` from whatever branch was checked out.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+# Deploys never overlap and are never cancelled half-way; PR runs cancel superseded ones.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-{0}', github.ref) || 'fly-deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -36,5 +45,29 @@ jobs:
         run: |
           test -f docs/sitemap.xml
           test -f docs/robots.txt
-          grep -q 'camp-scout-ai/campgrounds' docs/sitemap.xml
+          grep -q 'https://campscout.terapak.com/campgrounds' docs/sitemap.xml
           grep -q 'Sitemap:' docs/robots.txt
+
+  deploy:
+    name: deploy → production
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned, not @master: an unpinned setup-flyctl died transiently on 2026-09-27 in another repo.
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+      # Builds from this clean checkout of main (fly.toml carries the GA4 build arg), so nothing
+      # untracked on a laptop can ship.
+      - name: fly deploy
+        run: flyctl deploy --app campscout --remote-only --wait-timeout 600
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: smoke check
+        run: |
+          for i in 1 2 3 4 5 6; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' https://campscout.terapak.com/health) && [ "$code" = 200 ] && echo "health 200" && exit 0
+            sleep 10
+          done
+          echo "health check failed after deploy (last status: $code)"; exit 1
