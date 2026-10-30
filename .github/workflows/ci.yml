@@ -182,7 +182,7 @@ jobs:
       # to them, analytics would switch off silently. So prove the live bundle still carries the ID.
       - name: GA4 Measurement ID still in the live bundle
         run: |
-          want=$(grep -E '^\s*VITE_GA_MEASUREMENT_ID\s*=' fly.toml | sed -E 's/.*=\s*"([^"]+)".*/\1/')
+          want=$(grep -E '^[[:space:]]*VITE_GA_MEASUREMENT_ID[[:space:]]*=' fly.toml | sed -E 's/.*"([^"]+)".*/\1/')
           [ -n "$want" ] || { echo "no VITE_GA_MEASUREMENT_ID in fly.toml — nothing to check"; exit 0; }
           js=$(curl -s https://campscout.terapak.com/ | grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
           [ -n "$js" ] || { echo "::error::could not find the main bundle in the live HTML"; exit 1; }
