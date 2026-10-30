@@ -123,17 +123,17 @@ jobs:
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       # Pinned, not @master: an unpinned setup-flyctl died transiently on 2026-09-27 in another repo.
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
       # Builds from this clean checkout of main (fly.toml carries the GA4 build arg), so nothing
       # untracked on a laptop can ship.
-      # `--build-arg GIT_SHA` stamps the image with `LABEL GH_SHA` (see Dockerfile) so the next step
-      # can prove what each machine is actually running.
+      # flyctl stamps the image with GH_SHA (= github.sha) itself when it builds inside Actions — verified
+      # 10-30 on machine 7812323a220e38 — so no --build-arg is needed for the landed check below.
       - name: fly deploy
-        run: flyctl deploy --app campscout --remote-only --build-arg GIT_SHA=${{ github.sha }} --wait-timeout 600
+        run: flyctl deploy --app campscout --remote-only --wait-timeout 600
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -177,9 +177,8 @@ jobs:
           done
           echo "health check failed after deploy (last status: $code)"; exit 1
 
-      # GA4's Measurement ID is a BUILD arg from fly.toml [build.args]. This job also passes
-      # --build-arg GIT_SHA on the command line; if that ever replaced the toml args instead of adding
-      # to them, analytics would switch off silently. So prove the live bundle still carries the ID.
+      # GA4's Measurement ID is a BUILD arg from fly.toml [build.args]: if a build ever lost it, analytics
+      # would switch off silently (no error anywhere). So prove the live bundle still carries the ID.
       - name: GA4 Measurement ID still in the live bundle
         run: |
           want=$(grep -E '^[[:space:]]*VITE_GA_MEASUREMENT_ID[[:space:]]*=' fly.toml | sed -E 's/.*"([^"]+)".*/\1/')

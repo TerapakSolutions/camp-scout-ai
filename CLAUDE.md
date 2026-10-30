@@ -17,8 +17,9 @@ Single npm package at the repo root (use npm, not pnpm: `package-lock.json` is t
 - `main` is production. CI (`.github/workflows/ci.yml`) runs `lint`, `typecheck`, `test` and `build`
   as separate jobs on every PR and every push to `main`; the `verify` job aggregates them and passes
   only if all four succeeded. On a push to `main` the `deploy` job (`needs: verify`) runs
-  `flyctl deploy --app campscout --build-arg GIT_SHA=<sha>`, asserts every machine's image label
-  `GH_SHA` equals that commit, then smoke-checks `https://campscout.terapak.com/health`.
+  `flyctl deploy --app campscout`, asserts every machine's image label `GH_SHA` (stamped by flyctl
+  in Actions) equals that commit, smoke-checks `https://campscout.terapak.com/health`, and checks the
+  live bundle still carries the GA4 Measurement ID.
 - **Merging to `main` deploys to prod.** Never run `fly deploy` by hand: before CI deploys, prod
   drifted 52 commits away from `main` because every release was a hand deploy from a laptop branch.
 - Work on a branch and open a PR. `verify` is a **required status check** on `main` (since
