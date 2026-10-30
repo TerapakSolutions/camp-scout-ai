@@ -196,7 +196,10 @@ jobs:
       # untracked on a laptop can ship.
       # flyctl stamps the image with GH_SHA (= github.sha) itself when it builds inside Actions — verified
       # 10-30 on machine 7812323a220e38 — so no --build-arg is needed for the landed check below.
+      # Step timeout < the job's 20 min: a step that times out FAILS (and the Slack step below fires);
+      # a job that times out is CANCELLED, and `if: failure()` steps never run on cancellation.
       - name: fly deploy
+        timeout-minutes: 15
         run: flyctl deploy --app campscout --remote-only --wait-timeout 600
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
