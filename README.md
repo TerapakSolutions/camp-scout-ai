@@ -136,6 +136,8 @@ They never install anything, use a global eslint, touch the network, or change y
 `bash`, `git`, `jq` and `perl` on your `PATH` (perl provides the tsc timeout; macOS has no
 `timeout`), plus `npm ci` so `node_modules` exists. Without `node_modules` the hooks only print a
 "run npm ci" notice. Without `jq` the hooks cannot read their input and silently do nothing.
+Without `perl` the Stop gate cannot run `tsc` under its timeout, so it falls back to lint only (with a
+non-blocking note): type errors are then caught by `bash scripts/verify.sh` and CI, not by the hook.
 
 ### Opting out locally
 
