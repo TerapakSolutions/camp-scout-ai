@@ -40,6 +40,13 @@ COPY --from=build /app/src/server ./src/server
 COPY --from=build /app/src/data ./src/data
 COPY --from=build /app/src/ingestion ./src/ingestion
 
+# The commit, on the image. `flyctl deploy` exiting 0 means the deploy was ACCEPTED, not that the
+# machine is running the new code. CI passes `--build-arg GIT_SHA=<sha>` and then reads
+# `image_ref.labels.GH_SHA` back from every machine (same convention as seoplatform-admin).
+# Must stay in THIS (final) stage: a label on the build stage never reaches the running image.
+ARG GIT_SHA=unknown
+LABEL GH_SHA=$GIT_SHA
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Camp Scout AI — repeatable project verification
-# Runs available quality checks from package.json, then a production build.
+# Runs typecheck, lint, test (with the coverage floor) and the production build.
+# A missing required npm script is a FAILURE, never a skip.
 # Exits non-zero on the first failure. Performs no git or deployment actions.
 
 set -euo pipefail
@@ -13,10 +14,6 @@ has_npm_script() {
     const scripts = require('./package.json').scripts || {};
     process.exit(Object.prototype.hasOwnProperty.call(scripts, process.argv[1]) ? 0 : 1);
   " "$1"
-}
-
-get_npm_script() {
-  node -e "console.log((require('./package.json').scripts || {})[process.argv[1]] || '')" "$1"
 }
 
 section() {
@@ -37,14 +34,14 @@ fail() {
   exit 1
 }
 
-run_if_available() {
+# Every required script must exist. A missing one FAILS the gate: skipping it would print
+# "ALL CHECKS PASSED" for a check that never ran.
+run_required() {
   local script_name="$1"
   local label="$2"
 
   if ! has_npm_script "$script_name"; then
-    section "$label (skipped)"
-    echo "  npm script '$script_name' not found — skipped"
-    return 0
+    fail "$label — npm script '$script_name' is required but not found in package.json"
   fi
 
   section "$label"
@@ -56,87 +53,20 @@ run_if_available() {
   fi
 }
 
-resolve_unit_test_script() {
-  for script_name in test:unit unit test; do
-    if has_npm_script "$script_name"; then
-      echo "$script_name"
-      return 0
-    fi
-  done
-  return 1
-}
-
-resolve_coverage_script() {
-  for script_name in coverage test:coverage test:ci; do
-    if has_npm_script "$script_name"; then
-      echo "$script_name"
-      return 0
-    fi
-  done
-  return 1
-}
-
 echo "Camp Scout AI — Project Verification"
 echo "Project root: $ROOT"
 echo ""
 
-# --- Typecheck ---
-run_if_available "typecheck" "Typecheck"
+# Check all required scripts up front, so a missing one fails before minutes of work.
+for required in typecheck lint test build; do
+  has_npm_script "$required" || fail "npm script '$required' is required but not found in package.json"
+done
 
-# --- Lint ---
-run_if_available "lint" "Lint"
-
-# --- Unit tests ---
-UNIT_SCRIPT=""
-if UNIT_SCRIPT="$(resolve_unit_test_script)"; then
-  section "Unit Tests"
-  echo "  npm run $UNIT_SCRIPT"
-  if npm run "$UNIT_SCRIPT"; then
-    pass "Unit Tests"
-  else
-    fail "Unit Tests"
-  fi
-else
-  section "Unit Tests (skipped)"
-  echo "  No test:unit, unit, or test script found — skipped"
-fi
-
-# --- Coverage ---
-COVERAGE_SCRIPT=""
-if COVERAGE_SCRIPT="$(resolve_coverage_script)"; then
-  section "Coverage"
-  echo "  npm run $COVERAGE_SCRIPT"
-  if npm run "$COVERAGE_SCRIPT"; then
-    pass "Coverage"
-  else
-    fail "Coverage"
-  fi
-elif has_npm_script "test"; then
-  TEST_CMD="$(get_npm_script test)"
-  if [[ "$TEST_CMD" == *coverage* ]]; then
-    section "Coverage (included in Unit Tests)"
-    echo "  npm run test already includes coverage — no separate step"
-  else
-    section "Coverage (skipped)"
-    echo "  No coverage script found — skipped"
-  fi
-else
-  section "Coverage (skipped)"
-  echo "  No coverage script found — skipped"
-fi
-
-# --- Production build (required) ---
-if ! has_npm_script "build"; then
-  fail "Production Build — npm script 'build' is required but not found"
-fi
-
-section "Production Build"
-echo "  npm run build"
-if npm run build; then
-  pass "Production Build"
-else
-  fail "Production Build"
-fi
+run_required "typecheck" "Typecheck"
+run_required "lint" "Lint"
+# `npm test` is `jest --coverage`; the coverage floor lives in jest.config.js (coverageThreshold).
+run_required "test" "Unit Tests + Coverage"
+run_required "build" "Production Build"
 
 section "Verification Complete"
 echo ""

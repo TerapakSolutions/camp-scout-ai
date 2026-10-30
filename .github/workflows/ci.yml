@@ -16,28 +16,62 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  verify:
+  # The gate is four jobs aggregated into `verify`, not one job. Separate jobs always ALL run, so one
+  # push surfaces every failure instead of only the first. `scripts/verify.sh` stays the local gate.
+  lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
-
       - name: Install dependencies
         run: npm ci
-
       - name: Lint
         run: npm run lint
 
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Typecheck
         run: npm run typecheck
 
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      # `npm test` is `jest --coverage`; jest.config.js carries the coverage floor.
       - name: Test
         run: npm test
 
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Build
         run: npm run build
 
@@ -47,6 +81,42 @@ jobs:
           test -f docs/robots.txt
           grep -q 'https://campscout.terapak.com/campgrounds' docs/sitemap.xml
           grep -q 'Sitemap:' docs/robots.txt
+
+  # 🔴 `verify` IS THE REQUIRED STATUS CHECK ON main. Keep the job id `verify` and give it NO
+  # `name:` — the check name must stay exactly `verify` or every PR blocks waiting for a check
+  # that never reports.
+  #
+  # `if: always()` so this still runs when a dependency FAILED: without it the aggregator would be
+  # SKIPPED, and a skipped required check reads as satisfied-or-pending rather than red. Each
+  # `needs.<job>.result` is success / failure / cancelled / skipped, and only `success` passes —
+  # a cancelled or skipped job must never read as a green gate.
+  verify:
+    if: always()
+    needs: [lint, typecheck, test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Gate
+        env:
+          LINT: ${{ needs.lint.result }}
+          TYPECHECK: ${{ needs.typecheck.result }}
+          TEST: ${{ needs.test.result }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          echo "lint=$LINT  typecheck=$TYPECHECK  test=$TEST  build=$BUILD"
+          fail=0
+          for pair in "lint:$LINT" "typecheck:$TYPECHECK" "test:$TEST" "build:$BUILD"; do
+            name=${pair%%:*}; result=${pair#*:}
+            if [ "$result" != "success" ]; then
+              echo "::error title=Gate failed::${name} concluded '${result}'"
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "One or more checks failed - see the individual jobs above."
+            exit 1
+          fi
+          echo "all four checks passed"
 
   deploy:
     name: deploy → production
@@ -60,10 +130,45 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
       # Builds from this clean checkout of main (fly.toml carries the GA4 build arg), so nothing
       # untracked on a laptop can ship.
+      # `--build-arg GIT_SHA` stamps the image with `LABEL GH_SHA` (see Dockerfile) so the next step
+      # can prove what each machine is actually running.
       - name: fly deploy
-        run: flyctl deploy --app campscout --remote-only --wait-timeout 600
+        run: flyctl deploy --app campscout --remote-only --build-arg GIT_SHA=${{ github.sha }} --wait-timeout 600
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      # DID IT ACTUALLY LAND? `flyctl deploy` exiting 0 means the deploy was ACCEPTED, not that the
+      # app runs the new code. Every machine's `image_ref.labels.GH_SHA` must match this commit.
+      # Compact form copied from seoplatform-admin's ci.yml; machine STATE is not asserted (a
+      # machine on the right commit is fine, one on the wrong commit never is).
+      - name: Assert the deploy landed
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          EXPECTED: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            JSON="$(flyctl machines list --app campscout --json 2>/dev/null)" || JSON=""
+            if [ -n "$JSON" ] && [ "$JSON" != "[]" ] && [ "$JSON" != "null" ]; then
+              MISMATCH=0
+              while IFS= read -r line; do
+                ID="${line%% *}"; SHA="${line##* }"
+                if [ "${SHA:0:12}" = "${EXPECTED:0:12}" ]; then
+                  echo "  ok $ID on ${SHA:0:12}"
+                else
+                  echo "  MISMATCH $ID on ${SHA:0:12} - expected ${EXPECTED:0:12}"; MISMATCH=1
+                fi
+              done <<< "$(printf '%s' "$JSON" | jq -r '.[] | "\(.id) \((.image_ref.labels.GH_SHA) // "unknown")"')"
+              [ "$MISMATCH" -eq 0 ] && echo "deploy landed: every machine on ${EXPECTED:0:12}" && exit 0
+            fi
+            echo "not yet on ${EXPECTED:0:12} (attempt $attempt); waiting"
+            sleep 10
+          done
+          # "Could not determine" is a FAILURE, not a pass: an unverified deploy and a verified one
+          # must never share an exit code.
+          echo "::error title=Deploy not verified::campscout is not confirmed on ${EXPECTED:0:12} (mismatching machines listed above)."
+          exit 1
+
       - name: smoke check
         run: |
           for i in 1 2 3 4 5 6; do
