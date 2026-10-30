@@ -18,9 +18,10 @@ Single npm package at the repo root (use npm, not pnpm: `package-lock.json` is t
   as separate jobs on every PR and every push to `main`; the `verify` job aggregates them and passes
   only if all four succeeded. On a push to `main`, `deploy-staging` (`needs: verify`) deploys
   `fly.staging.toml` to `campscout-staging.fly.dev` (watcher off, stops when idle, own volume and
-  secrets), asserts it landed and answers `/health/ready`. Only then does the `deploy` job (`needs: deploy-staging`) run
-  `flyctl deploy --app campscout`, asserts every machine's image label `GH_SHA` (stamped by flyctl
-  in Actions) equals that commit, smoke-checks `https://campscout.terapak.com/health/ready` (DB + availability watcher), and checks the
+  secrets) and asserts it landed and answers `/health/ready`. Only then does the `deploy` job
+  (`needs: deploy-staging`) run `flyctl deploy --app campscout`, assert every machine's image label
+  `GH_SHA` (stamped by flyctl in Actions) equals that commit, smoke-check
+  `https://campscout.terapak.com/health/ready` (DB + availability watcher), and check the
   live bundle still carries the GA4 Measurement ID.
 - An `e2e` job runs the Cypress specs against the production build (`build:fly` + `server/production.mjs`,
   signed in via the `mintSession` task). It is NOT in `verify.needs`, so it reports but never blocks.
