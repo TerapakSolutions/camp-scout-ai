@@ -7,15 +7,19 @@ Single npm package at the repo root (use npm, not pnpm: `package-lock.json` is t
 - `npm ci` — install (CI uses Node 20). The hooks below need `node_modules` to run.
 - `npm run lint` — eslint on `src` (`.js`/`.jsx` only)
 - `npm run typecheck` — `tsc --noEmit` (root `tsconfig.json`, `allowJs` + `checkJs`)
-- `npm test` — jest with coverage
+- `npm test` — jest with coverage; `coverageThreshold` in `jest.config.js` is a floor (fails below it)
 - `npm run build` — vite build + sitemap
-- `bash scripts/verify.sh` — typecheck, lint, test, build; stops on the first failure. Run it before
-  calling a change done or opening a PR. It does no git or deploy actions.
+- `bash scripts/verify.sh` — typecheck, lint, test, build; stops on the first failure, and FAILS (never
+  skips) if one of those npm scripts is missing. Run it before calling a change done or opening a PR.
+  It does no git or deploy actions.
 
 ## Branch and deploy model
-- `main` is production. CI (`.github/workflows/ci.yml`) runs the `verify` job on every PR and every
-  push to `main`; on a push to `main` the `deploy` job (`needs: verify`) runs
-  `flyctl deploy --app campscout` and then smoke-checks `https://campscout.terapak.com/health`.
+- `main` is production. CI (`.github/workflows/ci.yml`) runs `lint`, `typecheck`, `test` and `build`
+  as separate jobs on every PR and every push to `main`; the `verify` job aggregates them and passes
+  only if all four succeeded. On a push to `main` the `deploy` job (`needs: verify`) runs
+  `flyctl deploy --app campscout`, asserts every machine's image label `GH_SHA` (stamped by flyctl
+  in Actions) equals that commit, smoke-checks `https://campscout.terapak.com/health`, and checks the
+  live bundle still carries the GA4 Measurement ID.
 - **Merging to `main` deploys to prod.** Never run `fly deploy` by hand: before CI deploys, prod
   drifted 52 commits away from `main` because every release was a hand deploy from a laptop branch.
 - Work on a branch and open a PR. `verify` is a **required status check** on `main` (since
@@ -23,6 +27,15 @@ Single npm package at the repo root (use npm, not pnpm: `package-lock.json` is t
   forced through it, so a direct push to `main` still deploys — don't. The `mainprotect` ruleset
   blocks branch deletion and force-push.
 - Workflow runs from outside contributors need maintainer approval before Actions run them.
+
+## How we work
+- **TDD, red first**, for fixes and features: write the failing test, and see it fail for the right
+  reason before the fix makes it pass.
+- **Fixtures come from real captured shapes** (a real API response, a real row), never invented envelopes.
+- **Feature flags** carry `REMOVE WHEN / OWNER / REVIEW BY` comments where they are defined.
+- **Bugs found but not fixed get logged** with evidence: `~/mycode/platform-status/STATUS.md` in Steve's
+  workspace, a GitHub issue for collaborators.
+- Run `bash scripts/verify.sh` before a PR. Every change goes through a PR and CI; `verify` is required.
 
 ## Privacy rules (do not loosen without the owner's say-so)
 - GA4 lives in `src/analytics/gaPrivacy.js`, which is unit tested. Consent Mode v2 defaults: analytics
