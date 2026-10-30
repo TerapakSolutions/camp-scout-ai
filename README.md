@@ -28,20 +28,61 @@ This epic establishes the real-data foundation for Camp Scout AI:
 - **No mock campground data** — seed records use real parks with official `sourceUrl` values.
 - **No invented availability** — live booking is not connected; users are directed to official portals.
 
-## Getting Started
+## Running locally
+
+The app is a Vite + React front end with a small Node API that runs inside the Vite dev server. Everything below works with **no paid accounts**: the database is a local SQLite file, the AI answer provider defaults to a fake that needs no OpenAI key, and the campground data ships in the repo.
+
+### 1. Install and start
 
 ```bash
-npm install
+npm ci                                 # Node 20; npm, not pnpm
+export SESSION_SECRET=$(openssl rand -hex 16)   # any string >= 16 chars
+export CAMP_SCOUT_API_TOKEN=local-dev-token     # any string; shared secret for /api/ask
 npm run dev
 ```
 
-The app runs at [http://localhost:5173](http://localhost:5173).
+The app runs at [http://localhost:5173](http://localhost:5173). On first API call it creates `./campscout.sqlite` (gitignored) and runs the migrations.
 
-**GitHub Pages:** [https://terapaksolutions.github.io/camp-scout-ai/campgrounds](https://terapaksolutions.github.io/camp-scout-ai/campgrounds)
+> `SESSION_SECRET` and `CAMP_SCOUT_API_TOKEN` must be **exported in the shell**. The dev server reads only `OPENAI_*`, `STRIPE_*` and `APP_URL` from `.env.local`; everything else comes from the environment.
 
-**Production (Fly.io):** [https://campscout.terapak.com/](https://campscout.terapak.com/)
+### 2. Sign in
 
-> The old `/smartapp-ui-kit/` URL is no longer valid. Use `/camp-scout-ai/` on GitHub Pages or `/campgrounds` locally.
+The whole UI sits behind a Google sign-in gate, and the OAuth routes (`/auth/google`, `/auth/google/callback`) are served only by the production server (`npm start`), not by `npm run dev`. For day-to-day development, mint a session cookie yourself — the same thing the Cypress specs do:
+
+```bash
+# prints a signed cs_session token (uses the SESSION_SECRET exported above)
+npx tsx -e "import('./src/server/auth/jwt.ts').then(m => console.log(m.signSession({ uid: 'dev', email: 'dev@example.com', name: 'Dev' })))"
+```
+
+In the browser on `http://localhost:5173`, open DevTools → Console and run
+
+```js
+document.cookie = "cs_session=<paste token>; path=/"; location.reload()
+```
+
+You are now signed in as `dev@example.com` for 14 days (or until you change `SESSION_SECRET`).
+
+To use real Google sign-in instead: create an OAuth client (Web application) in Google Cloud Console with redirect URI `http://localhost:8080/auth/google/callback`, then
+
+```bash
+export GOOGLE_CLIENT_ID=... GOOGLE_CLIENT_SECRET=... OAUTH_REDIRECT_URL=http://localhost:8080/auth/google/callback
+npm run build:fly && npm start      # production server on :8080, serves dist/
+```
+
+### 3. What works without keys, and what needs them
+
+| Feature | Without any keys | To turn on for real |
+|---|---|---|
+| Campground browser, search, filters, detail pages | Works (data in `src/data/campgrounds.js`) | — |
+| AI answers (`/api/ask`, retrieval playground) | Works with the **fake provider** (echoes retrieved context, $0) | `OPENAI_ANSWER_PROVIDER=openai` + `OPENAI_API_KEY` in `.env.local`, and `export AI_ENABLED=true` (kill switch, defaults to off); keep the budget limits under "AI Operations" set |
+| Recreation.gov facility data (RIDB) | Skipped | `RIDB_API_KEY` (free key from [ridb.recreation.gov](https://ridb.recreation.gov/)) |
+| Availability watches + alerts | UI works; nothing polls | `WATCHER_ENABLED=true` plus Twilio / Resend / Pushover credentials (see `.env.example`) |
+| Donations | Checkout fails | Stripe test keys + price IDs in `.env.local` |
+| Google Analytics | Off | `VITE_GA_MEASUREMENT_ID`; GA only runs on the production host anyway |
+
+`.env.example` lists every variable. Copy it to `.env.local` for the `OPENAI_*` / `STRIPE_*` / `APP_URL` values; export the rest.
+
+**Production (Fly.io):** [https://campscout.terapak.com/](https://campscout.terapak.com/) — see "Fly.io Deployment" below. Deploys come from CI on merge to `main`.
 
 ## Testing
 
