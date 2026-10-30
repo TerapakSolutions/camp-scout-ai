@@ -4,6 +4,10 @@
 
 **Camp Scout AI** helps campers discover real Northern California campgrounds using verified seed data from official park and agency sources.
 
+> **Status: work in progress.** This is a RAG learning project — natural-language campsite search grounded in verified campground data. Ingestion, retrieval, and the campground browser are in place; the AI search experience is still rough and the data set is small. Target for a fully working version is **spring 2027**, in time for camping season.
+>
+> Issues, forks, and PRs are welcome. If you want to move it forward faster than I can, open an issue or reach out — I'm happy to hand off pieces or collaborate. Licensed under [MIT](LICENSE).
+
 ## Epic CS-001: Real Seed Foundation
 
 This epic establishes the real-data foundation for Camp Scout AI:
@@ -33,7 +37,7 @@ npm run dev
 
 The app runs at [http://localhost:5173](http://localhost:5173).
 
-**GitHub Pages:** [https://sterapak.github.io/camp-scout-ai/campgrounds](https://sterapak.github.io/camp-scout-ai/campgrounds)
+**GitHub Pages:** [https://terapaksolutions.github.io/camp-scout-ai/campgrounds](https://terapaksolutions.github.io/camp-scout-ai/campgrounds)
 
 **Production (Fly.io):** [https://campscout.terapak.com/](https://campscout.terapak.com/)
 
