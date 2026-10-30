@@ -50,6 +50,8 @@ error under `### eslint src/components/AvailabilityNotice.jsx`.
 ## (d) "What is this repo's deploy rule?" → answers from CLAUDE.md ✅
 The session used no tools. Its final answer:
 > Merging to `main` deploys to production. On every push to `main`, the CI `deploy` job (`needs: verify`) runs `flyctl deploy --app campscout` and then smoke-checks `https://campscout.terapak.com/health`. Never run `fly deploy` by hand; prod once drifted 52 commits from `main` because of laptop hand-deploys. Work on a branch and open a PR. A red `verify` stops the deploy but doesn't block the merge, because `verify` isn't a required status check (the `mainprotect` ruleset only blocks branch deletion and force-push).
+
+*Recorded 2026-10-30 09:50 PDT. Later that day `verify` became a required status check on `main` (follow-up PR), so the "doesn't block the merge" part of this answer is no longer true; see `CLAUDE.md`.*
 >
 > **Source:** `CLAUDE.md`, the "Branch and deploy model" section. It describes `.github/workflows/ci.yml`, but I didn't open that file to check it.
 
