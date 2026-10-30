@@ -152,8 +152,9 @@ user settings while you work here):
 ### Intentionally not in the repo
 
 - **The maintainer's personal PR-review gate** (a pre-`gh pr create` hook tied to his own review
-  workflow). The PR contract here is the CI `verify` job (a red run stops the deploy) and the `mainprotect`
-  ruleset instead.
+  workflow). The PR contract here is the CI `verify` job instead: it is a required status check on
+  `main` (a PR can't merge until it passes) and a red run stops the deploy. The `mainprotect` ruleset
+  blocks branch deletion and force-push.
 - **Terminal status integrations** (iTerm2 status hooks): personal, machine-specific.
 - **MCP servers**: none are needed to work on this repo.
 - `scripts/hooks/` is copied from the maintainer's global hooks; `scripts/hooks/SOURCE` records the

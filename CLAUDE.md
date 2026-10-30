@@ -18,9 +18,10 @@ Single npm package at the repo root (use npm, not pnpm: `package-lock.json` is t
   `flyctl deploy --app campscout` and then smoke-checks `https://campscout.terapak.com/health`.
 - **Merging to `main` deploys to prod.** Never run `fly deploy` by hand: before CI deploys, prod
   drifted 52 commits away from `main` because every release was a hand deploy from a laptop branch.
-- Work on a branch and open a PR. A red `verify` stops the deploy. It does **not** block the merge:
-  `verify` is not a required status check today (the `mainprotect` ruleset only blocks branch
-  deletion and force-push).
+- Work on a branch and open a PR. `verify` is a **required status check** on `main` (since
+  2026-10-30): a PR can't merge until it passes, and a red run also stops the deploy. Admins aren't
+  forced through it, so a direct push to `main` still deploys — don't. The `mainprotect` ruleset
+  blocks branch deletion and force-push.
 - Workflow runs from outside contributors need maintainer approval before Actions run them.
 
 ## Privacy rules (do not loosen without the owner's say-so)
