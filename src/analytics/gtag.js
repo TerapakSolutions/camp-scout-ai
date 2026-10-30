@@ -15,6 +15,8 @@
  * every site using GA — so it is a build arg, not a secret.
  */
 
+import { CONSENT_DEFAULT, isProductionHost, sanitizePageLocation, sanitizePagePath } from './gaPrivacy.js';
+
 const MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID;
 
 let initialised = false;
@@ -35,6 +37,10 @@ export function initAnalytics() {
   if (typeof document === 'undefined' || typeof window === 'undefined') {
     return; // server render / prerender — nothing to do
   }
+  // campscout.fly.dev and localhost serve the same build: count production only.
+  if (!isProductionHost(window.location.hostname)) {
+    return;
+  }
 
   const script = document.createElement('script');
   script.async = true;
@@ -51,10 +57,17 @@ export function initAnalytics() {
   }
   w.gtag = gtag;
 
+  // No cookies: deny all storage before anything else is sent (see gaPrivacy.js).
+  gtag('consent', 'default', CONSENT_DEFAULT);
   gtag('js', new Date());
   // Default send_page_view:true fires the landing page_view here, which is what
   // records the referral source (LinkedIn, Google, direct) for the session.
-  gtag('config', MEASUREMENT_ID);
+  // page_location is sanitized so e.g. the Stripe ?session_id= never reaches Google.
+  gtag('config', MEASUREMENT_ID, {
+    page_location: sanitizePageLocation(w.location.href),
+    allow_google_signals: false,
+    allow_ad_personalization_signals: false,
+  });
 
   initialised = true;
 }
@@ -69,7 +82,7 @@ export function trackPageView(path) {
     return;
   }
   w.gtag('event', 'page_view', {
-    page_path: path,
-    page_location: w.location.href,
+    page_path: sanitizePagePath(path),
+    page_location: sanitizePageLocation(w.location.href),
   });
 }
