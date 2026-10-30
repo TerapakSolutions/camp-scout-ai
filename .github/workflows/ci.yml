@@ -182,9 +182,80 @@ jobs:
           bash scripts/ci/slack-alert.sh ":rotating_light: CampScout CI gate FAILED on main — nothing deployed" \
             ":rotating_light: *CampScout CI gate FAILED on \`main\`* — the deploy was skipped, so the merged commit is NOT live; campscout.terapak.com still serves the last good release.\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}|run> · commit \`${GITHUB_SHA:0:7}\` · lint \`${LINT}\` · typecheck \`${TYPECHECK}\` · test \`${TEST}\` · build \`${BUILD}\`"
 
+  # STAGING FIRST (Steve chose a separate Fly app, 2026-10-30; config in fly.staging.toml). Production
+  # `needs` this job, so a commit that fails to deploy, land or answer /health/ready on staging never
+  # reaches prod. Staging has its own app-scoped deploy token: the prod one is scoped to `campscout`.
+  deploy-staging:
+    name: deploy → staging
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_STAGING }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+      - name: fly deploy (staging)
+        timeout-minutes: 15
+        run: flyctl deploy --config fly.staging.toml --app campscout-staging --remote-only --wait-timeout 600
+
+      # Same landed check as production: every machine's GH_SHA label must equal this commit. A stopped
+      # (idle) staging machine still carries the label, so auto-stop does not break this.
+      - name: Assert the staging deploy landed
+        env:
+          EXPECTED: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            JSON="$(flyctl machines list --app campscout-staging --json 2>/dev/null)" || JSON=""
+            if [ -n "$JSON" ] && [ "$JSON" != "[]" ] && [ "$JSON" != "null" ]; then
+              MISMATCH=0
+              while IFS= read -r line; do
+                ID="${line%% *}"; SHA="${line##* }"
+                if [ "${SHA:0:12}" = "${EXPECTED:0:12}" ]; then
+                  echo "  ok $ID on ${SHA:0:12}"
+                else
+                  echo "  MISMATCH $ID on ${SHA:0:12} - expected ${EXPECTED:0:12}"; MISMATCH=1
+                fi
+              done <<< "$(printf '%s' "$JSON" | jq -r '.[] | "\(.id) \((.image_ref.labels.GH_SHA) // "unknown")"')"
+              [ "$MISMATCH" -eq 0 ] && echo "staging landed: every machine on ${EXPECTED:0:12}" && exit 0
+            fi
+            echo "not yet on ${EXPECTED:0:12} (attempt $attempt); waiting"
+            sleep 10
+          done
+          echo "::error title=Staging deploy not verified::campscout-staging is not confirmed on ${EXPECTED:0:12}."
+          exit 1
+
+      # The machine may be stopped (idle); the first request wakes it, so this retries for ~2 min.
+      # /health/ready on staging checks the DB only: WATCHER_ENABLED is false there (`not_configured`).
+      - name: Staging readiness + pages
+        run: |
+          base=https://campscout-staging.fly.dev
+          ok=0
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /tmp/ready.json -w '%{http_code}' "$base/health/ready") && [ "$code" = 200 ] && ok=1 && break
+            sleep 10
+          done
+          [ "$ok" = 1 ] || { echo "::error::staging /health/ready not 200 (last $code, body: $(cat /tmp/ready.json 2>/dev/null))"; exit 1; }
+          echo "ready 200: $(cat /tmp/ready.json)"
+          for path in / /campgrounds; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$base$path")
+            [ "$code" = 200 ] || { echo "::error::staging $path returned $code"; exit 1; }
+            echo "  $path 200"
+          done
+
+      - name: Say so if the staging deploy failed
+        if: failure()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+        run: |
+          bash scripts/ci/slack-alert.sh ":rotating_light: CampScout STAGING deploy FAILED — production not reached" \
+            ":rotating_light: *CampScout STAGING deploy FAILED* (commit \`${GITHUB_SHA:0:7}\`) — production was NOT deployed; campscout.terapak.com still serves the last good release.\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}|run>"
+
   deploy:
     name: deploy → production
-    needs: verify
+    needs: deploy-staging
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
