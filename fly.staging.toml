@@ -1,0 +1,43 @@
+# STAGING — campscout-staging.fly.dev (Steve chose a separate Fly app, 2026-10-30).
+# Every push to main deploys HERE first (`deploy-staging` in .github/workflows/ci.yml); production only
+# deploys if staging landed and answers /health/ready. Same Dockerfile and server as prod.
+#
+# Differences from fly.toml, all deliberate:
+#   - WATCHER_ENABLED = 'false': staging must never poll reservation sites or send SMS/email/push.
+#   - Stops when idle (auto_stop 'stop', min 0): costs ~nothing between deploys; the first request
+#     wakes it in a few seconds. The CI smoke checks retry long enough to cover that.
+#   - No GA build arg: analytics stays prod-only (gaPrivacy.js also only runs on the prod host).
+#   - Its own volume: staging never touches prod data.
+# Secrets (set by Steve, never in this file): SESSION_SECRET, CAMP_SCOUT_API_TOKEN (both staging-only
+# values), AI_ENABLED=false, APP_URL, GOOGLE_CLIENT_ID/SECRET + OAUTH_REDIRECT_URL for sign-in.
+app = 'campscout-staging'
+primary_region = 'sjc'
+
+[env]
+  NODE_ENV = 'production'
+  DATABASE_PATH = '/data/campscout.sqlite'
+  WATCHER_ENABLED = 'false'
+
+[[mounts]]
+  source = 'campscout_staging_data'
+  destination = '/data'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '5s'
+    grace_period = '20s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1
