@@ -1,0 +1,22 @@
+name: Slack alert test
+
+# Manual only. Sends one harmless test message through the same script and secret the CI alert steps
+# use, so delivery can be proven without breaking main. Run it after rotating the webhook, too.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send a test alert
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+        run: |
+          bash scripts/ci/slack-alert.sh "CampScout alert test" \
+            ":white_check_mark: CampScout CI alert test: if you can read this, failed CI gates and deploys will reach this channel.\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}|run>"
