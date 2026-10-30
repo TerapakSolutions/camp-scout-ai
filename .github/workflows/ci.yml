@@ -146,14 +146,14 @@ jobs:
     if: always()
     needs: [lint, typecheck, test, build]
     runs-on: ubuntu-latest
+    env:
+      LINT: ${{ needs.lint.result }}
+      TYPECHECK: ${{ needs.typecheck.result }}
+      TEST: ${{ needs.test.result }}
+      BUILD: ${{ needs.build.result }}
     timeout-minutes: 5
     steps:
       - name: Gate
-        env:
-          LINT: ${{ needs.lint.result }}
-          TYPECHECK: ${{ needs.typecheck.result }}
-          TEST: ${{ needs.test.result }}
-          BUILD: ${{ needs.build.result }}
         run: |
           echo "lint=$LINT  typecheck=$TYPECHECK  test=$TEST  build=$BUILD"
           fail=0
@@ -169,6 +169,18 @@ jobs:
             exit 1
           fi
           echo "all four checks passed"
+
+      # Only on main: there a red gate means a merged commit was NOT deployed. On a PR the red tick
+      # is the signal, and alerting on every PR would teach the channel to ignore this.
+      - name: Say so if the gate failed on main
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          # A REPOSITORY secret on camp-scout-ai (set 2026-10-30). It shadows the TerapakSolutions org
+          # secret of the same name, which is private-repos-only and so invisible to this public repo.
+          SLACK_WEBHOOK: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+        run: |
+          bash scripts/ci/slack-alert.sh ":rotating_light: CampScout CI gate FAILED on main — nothing deployed" \
+            ":rotating_light: *CampScout CI gate FAILED on \`main\`* — the deploy was skipped, so the merged commit is NOT live; campscout.terapak.com still serves the last good release.\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}|run> · commit \`${GITHUB_SHA:0:7}\` · lint \`${LINT}\` · typecheck \`${TYPECHECK}\` · test \`${TEST}\` · build \`${BUILD}\`"
 
   deploy:
     name: deploy → production
@@ -243,3 +255,13 @@ jobs:
           curl -s "https://campscout.terapak.com$js" | grep -q "$want" \
             && echo "GA ID $want present in $js" \
             || { echo "::error::GA Measurement ID $want is MISSING from live bundle $js — analytics is off"; exit 1; }
+
+      # Last, so it sees every step above: the flyctl deploy, the landed assert, the readiness smoke
+      # check and the GA tripwire. Each failure means something different, so the message names them.
+      - name: Say so if the deploy failed
+        if: failure()
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_ALERT_WEBHOOK_URL }}
+        run: |
+          bash scripts/ci/slack-alert.sh ":rotating_light: CampScout production deploy FAILED" \
+            ":rotating_light: *CampScout production deploy FAILED* (commit \`${GITHUB_SHA:0:7}\`).\nIf \`fly deploy\` or the landed assert failed, prod may be on the OLD commit (or split). If only the readiness smoke check failed, the new code IS live but \`/health/ready\` is not 200: its body in the log names \`db\` or \`watcher\`. If only the GA tripwire failed, the site is up but analytics is off.\n<${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}|run>"

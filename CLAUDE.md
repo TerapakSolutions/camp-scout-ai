@@ -24,6 +24,9 @@ Single npm package at the repo root (use npm, not pnpm: `package-lock.json` is t
   signed in via the `mintSession` task). It is NOT in `verify.needs`, so it reports but never blocks.
 - `/health/ready` is not a Fly routing check on purpose: with one machine, a failing check takes the
   whole site out of routing. Fly checks `/health` only.
+- A failed gate on `main` or a failed deploy posts to Slack via `scripts/ci/slack-alert.sh` (repo secret
+  `SLACK_ALERT_WEBHOOK_URL`). A lost alert shows as an `::error`, never a quiet green step. Prove
+  delivery with the manual "Slack alert test" workflow.
 - **Merging to `main` deploys to prod.** Never run `fly deploy` by hand: before CI deploys, prod
   drifted 52 commits away from `main` because every release was a hand deploy from a laptop branch.
 - Work on a branch and open a PR. `verify` is a **required status check** on `main` (since
