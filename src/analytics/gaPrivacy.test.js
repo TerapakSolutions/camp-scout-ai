@@ -2,23 +2,42 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   CONSENT_DEFAULT,
+  CONSENT_REGION_DENIED,
   isProductionHost,
   sanitizePageLocation,
   sanitizePagePath,
 } from './gaPrivacy';
 
 // Why: GA4 on campscout was blocked by CSP (script-src 'self'); fixing the CSP
-// makes collection real, so what is sent must be safe first (Steve 2026-10-29:
-// no cookies). The Stripe donation return URL carries ?session_id=cs_…, which
+// makes collection real, so what is sent must be safe first. Cookieless shipped
+// first (PR #67) and GA4 Realtime then showed 0 users — unconsented pings are
+// not reported — so Steve 2026-10-29 chose analytics cookies ON outside the
+// EEA/UK/CH, with every ad signal still denied everywhere. The Stripe donation return URL carries ?session_id=cs_…, which
 // would otherwise reach Google in page_location.
 describe('GA4 privacy for campscout', () => {
-  it('denies every storage signal by default — no GA cookies', () => {
+  it('global default grants analytics cookies and denies every ad signal', () => {
     expect(CONSENT_DEFAULT).toEqual({
+      ad_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+      analytics_storage: 'granted',
+    });
+  });
+
+  it('region default denies all four signals across the EEA, UK and CH', () => {
+    const { region, ...signals } = CONSENT_REGION_DENIED;
+    expect(signals).toEqual({
       ad_storage: 'denied',
       ad_user_data: 'denied',
       ad_personalization: 'denied',
       analytics_storage: 'denied',
     });
+    expect(region).toEqual(expect.arrayContaining(['DE', 'FR', 'GB', 'CH', 'NO']));
+    // EU-27 + EEA (IS, LI, NO) + UK + CH = 32 ISO 3166-1 alpha-2 codes, no dupes.
+    expect(new Set(region).size).toBe(32);
+    expect(region).toHaveLength(32);
+    region.forEach((code) => expect(code).toMatch(/^[A-Z]{2}$/));
+    expect(region).not.toContain('US');
   });
 
   it('drops the Stripe checkout session id from the donation return URL', () => {
@@ -55,11 +74,20 @@ describe('GA4 privacy for campscout', () => {
 describe('wiring in gtag.js', () => {
   const src = fs.readFileSync(path.join(__dirname, 'gtag.js'), 'utf8');
 
-  it('sets consent default BEFORE config', () => {
-    const consent = src.indexOf("gtag('consent', 'default', CONSENT_DEFAULT)");
+  it('sets the region default, then the global default, both BEFORE js and config', () => {
+    const region = src.indexOf("gtag('consent', 'default', CONSENT_REGION_DENIED)");
+    const global = src.indexOf("gtag('consent', 'default', CONSENT_DEFAULT)");
+    const js = src.indexOf("gtag('js'");
     const config = src.indexOf("gtag('config'");
-    expect(consent).toBeGreaterThan(-1);
-    expect(config).toBeGreaterThan(consent);
+    expect(region).toBeGreaterThan(-1);
+    expect(global).toBeGreaterThan(region);
+    expect(js).toBeGreaterThan(global);
+    expect(config).toBeGreaterThan(global);
+  });
+
+  it('keeps Google Signals and ad personalisation off', () => {
+    expect(src).toMatch(/allow_google_signals:\s*false/);
+    expect(src).toMatch(/allow_ad_personalization_signals:\s*false/);
   });
 
   it('never sends the raw location — config and page_view use the sanitizers', () => {

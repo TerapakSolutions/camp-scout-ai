@@ -15,7 +15,13 @@
  * every site using GA — so it is a build arg, not a secret.
  */
 
-import { CONSENT_DEFAULT, isProductionHost, sanitizePageLocation, sanitizePagePath } from './gaPrivacy.js';
+import {
+  CONSENT_DEFAULT,
+  CONSENT_REGION_DENIED,
+  isProductionHost,
+  sanitizePageLocation,
+  sanitizePagePath,
+} from './gaPrivacy.js';
 
 const MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID;
 
@@ -57,7 +63,10 @@ export function initAnalytics() {
   }
   w.gtag = gtag;
 
-  // No cookies: deny all storage before anything else is sent (see gaPrivacy.js).
+  // Consent defaults before anything else is sent (see gaPrivacy.js): EEA/UK/CH
+  // first with everything denied, then the global default (analytics cookies
+  // granted, every ad signal denied).
+  gtag('consent', 'default', CONSENT_REGION_DENIED);
   gtag('consent', 'default', CONSENT_DEFAULT);
   gtag('js', new Date());
   // Default send_page_view:true fires the landing page_view here, which is what
