@@ -54,6 +54,11 @@ primary_region = 'sjc'
     method = 'GET'
     path = '/health'
 
+  # /health/ready (DB + availability watcher) is deliberately NOT a Fly check. A machine failing a
+  # service check "won't be routed to until its checks start passing" and is not restarted (Fly
+  # docs); this app is ONE machine, so a stalled watcher tick would take the whole site dark while it
+  # otherwise works. The deploy smoke check in ci.yml polls /health/ready instead.
+
 [[vm]]
   memory = '512mb'
   cpu_kind = 'shared'

@@ -255,6 +255,37 @@ export async function runOneTick(
   return summary
 }
 
+/**
+ * Liveness of the in-process loop, read by `/health/ready` (src/server/health/readiness.ts).
+ * Null until startWatchScheduler runs. `lastTickOkAt` moves only when a tick COMPLETES without
+ * throwing: per-fetch provider errors are caught inside runOneTick and don't count against it, but
+ * a tick that throws (e.g. the DB) does.
+ */
+export interface WatcherRuntimeStatus {
+  startedAt: number
+  tickMs: number
+  pollIntervalMs: number
+  lastTickOkAt: number | null
+}
+
+// Held on globalThis, NOT in a module variable: under tsx, server/production.mjs (ESM) and askRoute.ts
+// (loaded as CJS — package.json has no "type") each get their OWN instance of this module, so a
+// module-level variable set by the scheduler's caller was invisible to /health/ready, which read
+// `not_started` while the watcher ran (observed 2026-10-30). Symbol.for is process-wide.
+const STATUS_KEY = Symbol.for('campscout.watcherStatus')
+type StatusHolder = { [STATUS_KEY]?: WatcherRuntimeStatus | null }
+const holder = globalThis as unknown as StatusHolder
+
+export function getWatcherStatus(): WatcherRuntimeStatus | null {
+  const status = holder[STATUS_KEY]
+  return status ? { ...status } : null
+}
+
+/** Test helper: forget any started scheduler. */
+export function __resetWatcherStatusForTests(): void {
+  holder[STATUS_KEY] = null
+}
+
 /** Start the recurring scheduler. Returns a stop handle. */
 export function startWatchScheduler(
   db: Db,
@@ -263,12 +294,21 @@ export function startWatchScheduler(
   const tickMs = options.tickMs ?? DEFAULT_TICK_MS
   const log = options.logger ?? (() => {})
   let running = false
+  const status: WatcherRuntimeStatus = {
+    startedAt: Date.now(),
+    tickMs,
+    pollIntervalMs:
+      (options.defaultPollIntervalSeconds ?? DEFAULT_POLL_INTERVAL_SECONDS) * 1000,
+    lastTickOkAt: null,
+  }
+  holder[STATUS_KEY] = status
 
   const timer = setInterval(() => {
     if (running) return // no overlapping ticks (SQLite single-writer)
     running = true
     void runOneTick(db, options)
       .then((s) => {
+        status.lastTickOkAt = Date.now()
         if (s.watchesPolled > 0) log('watch_tick', { ...s })
       })
       .catch((err) => log('watch_tick_error', { error: String(err) }))

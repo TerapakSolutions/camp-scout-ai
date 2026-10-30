@@ -12,6 +12,7 @@ import {
   ASK_ROUTE_PATH,
   DONATE_ROUTE_PATH,
   HEALTH_ROUTE_PATH,
+  HEALTH_READY_ROUTE_PATH,
   METRICS_ROUTE_PATH,
   AI_DASHBOARD_ROUTE_PATH,
   RUNTIME_CONFIG_PATH,
@@ -32,6 +33,7 @@ import { EMPTY_QUESTION_ERROR } from './askHandler.js'
 import { DONATIONS_NOT_CONFIGURED_ERROR } from './donateHandler.js'
 import { SESSION_COOKIE } from '../auth/cookies.js'
 import { signSession } from '../auth/jwt.js'
+import { __resetDbForTests } from '../db/index.js'
 
 function createMockResponse() {
   /** @type {{ statusCode?: number, headers: Record<string, string>, body?: string, ended: boolean }} */
@@ -411,5 +413,75 @@ describe('runtime config script (/camp-scout-runtime.js)', () => {
 
     expect(state.body).not.toContain(TOKEN)
     expect(parseRuntime(state.body)).toEqual({ apiToken: null, user: null })
+  })
+})
+
+describe('GET /health/ready', () => {
+  it('passes the readiness verdict through: 503 with the body naming the failed check', async () => {
+    const readiness = () => ({
+      statusCode: 503,
+      body: { status: 'not_ready', failed: ['db'], checks: { db: 'fail', watcher: 'ok' } },
+    })
+    const middleware = createAskRouteMiddleware({ answerProvider: fakeAnswerProvider, readiness })
+    const req = createMockRequest({ method: 'GET', url: HEALTH_READY_ROUTE_PATH, body: null })
+    const { res, state } = createMockResponse()
+
+    await middleware(req, res, jest.fn())
+
+    expect(state.statusCode).toBe(503)
+    const payload = JSON.parse(state.body ?? '{}')
+    expect(payload.status).toBe('not_ready')
+    expect(payload.failed).toEqual(['db'])
+    expect(state.headers['cache-control']).toBe('no-store')
+  })
+
+  it('is ready against a real (in-memory) DB with the watcher not configured', async () => {
+    const prevPath = process.env.DATABASE_PATH
+    const prevWatcher = process.env.WATCHER_ENABLED
+    process.env.DATABASE_PATH = ':memory:'
+    delete process.env.WATCHER_ENABLED
+    __resetDbForTests(null)
+    try {
+      const middleware = createAskRouteMiddleware({ answerProvider: fakeAnswerProvider })
+      const req = createMockRequest({ method: 'GET', url: HEALTH_READY_ROUTE_PATH, body: null })
+      const { res, state } = createMockResponse()
+
+      await middleware(req, res, jest.fn())
+
+      expect(state.statusCode).toBe(200)
+      expect(JSON.parse(state.body ?? '{}')).toMatchObject({
+        status: 'ready',
+        checks: { db: 'ok', watcher: 'not_configured' },
+      })
+    } finally {
+      __resetDbForTests(null)
+      if (prevPath === undefined) delete process.env.DATABASE_PATH
+      else process.env.DATABASE_PATH = prevPath
+      if (prevWatcher !== undefined) process.env.WATCHER_ENABLED = prevWatcher
+    }
+  })
+
+  it('rejects non-GET with 405', async () => {
+    const middleware = createAskRouteMiddleware({ answerProvider: fakeAnswerProvider })
+    const req = createMockRequest({ method: 'POST', url: HEALTH_READY_ROUTE_PATH, body: null })
+    const { res, state } = createMockResponse()
+
+    await middleware(req, res, jest.fn())
+
+    expect(state.statusCode).toBe(405)
+  })
+
+  it('leaves /health (liveness) unchanged: still 200 even when readiness would fail', async () => {
+    const readiness = () => ({
+      statusCode: 503,
+      body: { status: 'not_ready', failed: ['db'], checks: { db: 'fail', watcher: 'ok' } },
+    })
+    const middleware = createAskRouteMiddleware({ answerProvider: fakeAnswerProvider, readiness })
+    const req = createMockRequest({ method: 'GET', url: HEALTH_ROUTE_PATH, body: null })
+    const { res, state } = createMockResponse()
+
+    await middleware(req, res, jest.fn())
+
+    expect(state.statusCode).toBe(200)
   })
 })

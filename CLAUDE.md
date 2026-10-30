@@ -18,8 +18,12 @@ Single npm package at the repo root (use npm, not pnpm: `package-lock.json` is t
   as separate jobs on every PR and every push to `main`; the `verify` job aggregates them and passes
   only if all four succeeded. On a push to `main` the `deploy` job (`needs: verify`) runs
   `flyctl deploy --app campscout`, asserts every machine's image label `GH_SHA` (stamped by flyctl
-  in Actions) equals that commit, smoke-checks `https://campscout.terapak.com/health`, and checks the
+  in Actions) equals that commit, smoke-checks `https://campscout.terapak.com/health/ready` (DB + availability watcher), and checks the
   live bundle still carries the GA4 Measurement ID.
+- An `e2e` job runs the Cypress specs against the production build (`build:fly` + `server/production.mjs`,
+  signed in via the `mintSession` task). It is NOT in `verify.needs`, so it reports but never blocks.
+- `/health/ready` is not a Fly routing check on purpose: with one machine, a failing check takes the
+  whole site out of routing. Fly checks `/health` only.
 - **Merging to `main` deploys to prod.** Never run `fly deploy` by hand: before CI deploys, prod
   drifted 52 commits away from `main` because every release was a hand deploy from a laptop branch.
 - Work on a branch and open a PR. `verify` is a **required status check** on `main` (since
