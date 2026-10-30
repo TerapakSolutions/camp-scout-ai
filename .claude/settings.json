@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/lint-changed-file.sh",
+            "timeout": 60,
+            "statusMessage": "Linting changed file"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/track-touched.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/hooks/stop-gates.sh",
+            "timeout": 120,
+            "statusMessage": "Turn-end gates (tsc + lint on touched repos)"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -23,3 +23,7 @@ docs/google*.html
 campscout.sqlite
 campscout.sqlite-shm
 campscout.sqlite-wal
+
+# Claude Code: personal overrides stay local (the shared hooks live in .claude/settings.json)
+.claude/settings.local.json
+.claude/*.local.*

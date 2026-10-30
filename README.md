@@ -96,9 +96,72 @@ Behavior:
 
 Use this before commits and deployments to validate the project.
 
+## Working with Claude Code in this repo
+
+The repo ships its own Claude Code configuration, so every collaborator gets the same lint and
+typecheck guardrails: `CLAUDE.md` (repo rules), `.claude/settings.json` (three hooks) and
+`scripts/hooks/` (the scripts they run). Nothing depends on anyone's home directory.
+
+### What runs, and when
+
+| Hook | Event | Blocks | Warns (non-blocking, once per session) |
+|------|-------|--------|----------------------------------------|
+| `lint-changed-file.sh` | after every `Write`/`Edit` | real eslint errors in the file just written: Claude sees them and must fix them | eslint config gap (no TS parser, so `.ts` files only "Parsing error"); eslint config error; no `node_modules` ("run npm ci") |
+| `track-touched.sh` | after every tool call | never | never. It records which git repos the session touched (file paths, `cd <dir>` and `git -C <dir>` in Bash commands) in `$TMPDIR/claude-gates/<session>/repos` |
+| `stop-gates.sh` | end of every turn (`Stop`) | `tsc --noEmit` type errors, or eslint errors, in **uncommitted** TS/JS changes of any touched repo. The turn continues until they are fixed | tsc missing, tsc timeout (90 s), lint capped at 25 files, time budget (100 s) used up |
+
+- Edits made through Bash (`sed -i`, scripts) are not linted at write time, but the Stop gate still
+  catches them because it checks `git status`, not the tool that made the change.
+- The Stop gate skips a repo whose diff is unchanged since its last pass in the same session.
+- Diagnostics are also logged to `$TMPDIR/claude-gates/<session>/gates.log`.
+- Messages that say "run the verify-gate skill" mean: run `bash scripts/verify.sh`.
+
+### What the trust prompt is asking you to allow
+
+The first time you open this folder, Claude Code asks whether to trust the project settings.
+Accepting lets it run these three commands, and nothing else, on your machine:
+
+```
+bash "$CLAUDE_PROJECT_DIR"/scripts/hooks/lint-changed-file.sh   # PostToolUse Write|Edit, 60 s timeout
+bash "$CLAUDE_PROJECT_DIR"/scripts/hooks/track-touched.sh       # PostToolUse (all tools), 5 s timeout
+bash "$CLAUDE_PROJECT_DIR"/scripts/hooks/stop-gates.sh          # Stop, 120 s timeout
+```
+
+They run the repo's own `node_modules/.bin/eslint` and `node_modules/.bin/tsc` and read git state.
+They never install anything, use a global eslint, touch the network, or change your files.
+`.claude/settings.json` sets no permissions, model, environment or MCP servers.
+
+### Required tools
+
+`bash`, `git`, `jq` and `perl` on your `PATH` (perl provides the tsc timeout; macOS has no
+`timeout`), plus `npm ci` so `node_modules` exists. Without `node_modules` the hooks only print a
+"run npm ci" notice. Without `jq` the hooks cannot read their input and silently do nothing.
+
+### Opting out locally
+
+Personal overrides go in `.claude/settings.local.json` (gitignored, along with `.claude/*.local.*`).
+To switch off every hook for yourself in this repo (this also silences any hooks from your own
+user settings while you work here):
+
+```json
+{ "disableAllHooks": true }
+```
+
+### Intentionally not in the repo
+
+- **The maintainer's personal PR-review gate** (a pre-`gh pr create` hook tied to his own review
+  workflow). The PR contract here is the CI `verify` job (a red run stops the deploy) and the `mainprotect`
+  ruleset instead.
+- **Terminal status integrations** (iTerm2 status hooks): personal, machine-specific.
+- **MCP servers**: none are needed to work on this repo.
+- `scripts/hooks/` is copied from the maintainer's global hooks; `scripts/hooks/SOURCE` records the
+  commit and a sha256 per file so drift is visible. Update by re-copying, not by editing in place.
+
 ## Fly.io Deployment
 
 `campscout.terapak.com` is served from Fly.io. A 502 Bad Gateway usually means the Fly app has no healthy machine running.
+
+> **Production deploys come from CI only.** Merging to `main` runs `verify` and then `flyctl deploy` (`.github/workflows/ci.yml`). Do not run `fly deploy` by hand against the `campscout` app; the commands below are for local builds and one-time setup.
 
 ```bash
 # One-time: install Fly CLI and authenticate
