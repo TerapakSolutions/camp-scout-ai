@@ -18,6 +18,9 @@ import {
 } from '../data/mergedCampgrounds'
 import { geocodeZip, type ZipLocation } from '../api/campgroundMediaClient'
 import { haversineMiles } from '../utils/geo'
+import { useAuth } from '../contexts/AuthContext'
+import SignInPrompt from '../components/SignInPrompt'
+import { applyPageSeo, SITE_NAME } from '../utils/seo'
 
 // Drive-time-ish presets (straight-line miles).
 const RADIUS_OPTIONS = [
@@ -34,6 +37,9 @@ function readMultiParam(searchParams, key) {
 
 export default function CampgroundsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  // Signed out: curated list only. The Recreation.gov list and ZIP geocoding are
+  // session-gated server-side, so they are not called (no 401s, no error shown).
+  const { isAuthenticated } = useAuth()
 
   const [query, setQuery] = useState('')
   const [selectedRegions, setSelectedRegions] = useState(() => readMultiParam(searchParams, 'region'))
@@ -42,7 +48,7 @@ export default function CampgroundsPage() {
   )
   const [selectedTags, setSelectedTags] = useState(() => readMultiParam(searchParams, 'tag'))
   const [imported, setImported] = useState<DisplayCampground[]>([])
-  const [loadingImported, setLoadingImported] = useState(true)
+  const [loadingImported, setLoadingImported] = useState(isAuthenticated)
   const [zip, setZip] = useState('')
   const [radiusMiles, setRadiusMiles] = useState(0)
   const [zipLoc, setZipLoc] = useState<ZipLocation | null>(null)
@@ -66,6 +72,16 @@ export default function CampgroundsPage() {
   }
 
   useEffect(() => {
+    applyPageSeo({
+      title: `Browse Northern California Campgrounds — ${SITE_NAME}`,
+      description:
+        'Browse Northern California campgrounds by region, amenity and tag, with official park sources and reservation links.',
+      path: '/campgrounds',
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined
     let cancelled = false
     loadImportedCampgrounds().then((list) => {
       if (cancelled) return
@@ -75,7 +91,7 @@ export default function CampgroundsPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isAuthenticated])
 
   const allCampgrounds = useMemo(
     () => (imported.length ? mergeCampgrounds(imported) : curatedCampgrounds()),
@@ -170,6 +186,11 @@ export default function CampgroundsPage() {
         onTagsChange={setSelectedTags}
       />
 
+      {!isAuthenticated ? (
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+          <SignInPrompt action="filter by distance from your ZIP code" />
+        </div>
+      ) : (
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="zip">
@@ -239,6 +260,7 @@ export default function CampgroundsPage() {
           )}
         </p>
       </div>
+      )}
 
       <p className="text-sm text-gray-500">
         Showing {results.length} campground{results.length !== 1 ? 's' : ''}

@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import CampgroundDetailPage from './CampgroundDetailPage'
 import { campgrounds } from '../data/campgrounds'
 import { getPrimaryImage } from '../data/campgroundData'
+import { AuthProvider } from '../contexts/AuthContext'
 
 jest.mock('../api/summaryClient.js', () => ({
   postSummary: jest.fn(),
@@ -58,7 +59,17 @@ describe('CampgroundDetailPage', () => {
   const silverLake = campgrounds.find((campground) => campground.id === 'silver-lake-west')
   const iceHouse = campgrounds.find((campground) => campground.id === 'ice-house-reservoir')
 
+  afterEach(() => {
+    delete window.__CAMP_SCOUT_RUNTIME__
+  })
+
   beforeEach(() => {
+    // These cases cover the signed-in page (AI summary etc.). Signed-out behavior
+    // is covered in src/AppRoutes.test.jsx.
+    window.__CAMP_SCOUT_RUNTIME__ = {
+      apiToken: 'test-token',
+      user: { email: 'camper@example.com' },
+    }
     postSummary.mockImplementation(({ campgroundId }) =>
       Promise.resolve({
         ...summarySuccessPayload,
@@ -70,11 +81,13 @@ describe('CampgroundDetailPage', () => {
 
   function renderDetail(id) {
     return render(
-      <MemoryRouter initialEntries={[`/campgrounds/${id}`]}>
-        <Routes>
-          <Route path="/campgrounds/:id" element={<CampgroundDetailPage />} />
-        </Routes>
-      </MemoryRouter>,
+      <AuthProvider>
+        <MemoryRouter initialEntries={[`/campgrounds/${id}`]}>
+          <Routes>
+            <Route path="/campgrounds/:id" element={<CampgroundDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>,
     )
   }
 

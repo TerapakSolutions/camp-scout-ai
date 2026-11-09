@@ -13,6 +13,9 @@ import CampgroundImage from '../components/CampgroundImage'
 import { getCampgroundById, getPrimaryImage, getBrandPlaceholder } from '../data/campgroundData'
 import { loadImportedCampgrounds, type DisplayCampground } from '../data/mergedCampgrounds'
 import { getKnowledgeCampgroundIds } from '../data/knowledge/documents.js'
+import { useAuth } from '../contexts/AuthContext'
+import SignInPrompt from '../components/SignInPrompt'
+import { applyPageSeo, SITE_NAME } from '../utils/seo'
 
 import type { Citation, UniqueSourceReference, AnswerConfidenceLevel, SummarySectionContent } from '../shared/types/api.js'
 import type { KnowledgeSnapshot } from '../server/rag/knowledgeSnapshot.js'
@@ -27,6 +30,9 @@ type SummaryPageState =
 
 export default function CampgroundDetailPage() {
   const { id } = useParams()
+  // Signed out, this page is public: it must not call the session/token-gated
+  // APIs (summary, photo, Recreation.gov list, watches) — it shows sign-in prompts.
+  const { isAuthenticated } = useAuth()
   const staticCampground = getCampgroundById(id)
   const [importedCampground, setImportedCampground] = useState<DisplayCampground | null>(null)
   const [resolving, setResolving] = useState(!staticCampground)
@@ -37,7 +43,8 @@ export default function CampgroundDetailPage() {
 
   // Fall back to the Recreation.gov-imported set for campgrounds not curated.
   useEffect(() => {
-    if (staticCampground) {
+    if (staticCampground || !isAuthenticated) {
+      setImportedCampground(null)
       setResolving(false)
       return undefined
     }
@@ -51,7 +58,7 @@ export default function CampgroundDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [id, staticCampground])
+  }, [id, staticCampground, isAuthenticated])
   // Start in 'loading': we attempt a summary for curated campgrounds AND any
   // Recreation.gov campground (the server generates one from RIDB facility data
   // when there's no curated knowledge). The effect below downgrades to
@@ -81,7 +88,7 @@ export default function CampgroundDetailPage() {
   // Only recreation.gov campgrounds have a facility id to resolve.
   useEffect(() => {
     setOfficialPhoto(null)
-    if (!campground) return undefined
+    if (!campground || !isAuthenticated) return undefined
     // Fetch when there is no curated image, OR when the curated one just failed.
     if (getPrimaryImage(campground) && !curatedImageFailed) return undefined
     const facilityId = parseRecGovCampgroundId(campground.reservationUrl)
@@ -94,12 +101,12 @@ export default function CampgroundDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [campground, curatedImageFailed])
+  }, [campground, curatedImageFailed, isAuthenticated])
 
   useEffect(() => {
     // Wait until the imported-campground lookup settles so we can read its
     // reservation URL (needed to tell whether it's a Recreation.gov facility).
-    if (resolving || !campground) {
+    if (resolving || !campground || !isAuthenticated) {
       return undefined
     }
 
@@ -162,7 +169,20 @@ export default function CampgroundDetailPage() {
     return () => {
       cancelled = true
     }
-  }, [campground, hasKnowledge, resolving])
+  }, [campground, hasKnowledge, resolving, isAuthenticated])
+
+  // Per-page head tags. An unknown id is noindex (also while still resolving).
+  useEffect(() => {
+    if (campground) {
+      applyPageSeo({
+        title: `${campground.name}, ${campground.region} — ${SITE_NAME}`,
+        description: `${campground.name} in ${campground.region}: amenities, rules, dog policy and official reservation links.`,
+        path: `/campgrounds/${campground.id}`,
+      })
+    } else {
+      applyPageSeo({ title: `Campground not found — ${SITE_NAME}`, noindex: true })
+    }
+  }, [campground])
 
   if (!campground) {
     return (
@@ -172,6 +192,10 @@ export default function CampgroundDetailPage() {
           Back to campgrounds
         </Link>
         <p className="text-gray-600">{resolving ? 'Loading…' : 'Campground not found.'}</p>
+        {/* Signed out, imported Rec.gov campgrounds are not loaded, so this id may still exist. */}
+        {!resolving && !isAuthenticated && (
+          <SignInPrompt action="see campgrounds imported from Recreation.gov" />
+        )}
       </div>
     )
   }
@@ -197,7 +221,7 @@ export default function CampgroundDetailPage() {
 
       <AvailabilityNotice />
 
-      {!hasKnowledge && (
+      {(!hasKnowledge || !isAuthenticated) && (
         <CampgroundImage
           key={primaryImage?.url ?? 'none'}
           image={primaryImage}
@@ -207,6 +231,12 @@ export default function CampgroundDetailPage() {
         />
       )}
 
+      {!isAuthenticated ? (
+        <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm space-y-2">
+          <h3 className="text-lg font-medium text-gray-900">AI summary</h3>
+          <SignInPrompt action="see the AI summary" />
+        </section>
+      ) : (
       <CampgroundAiSummary
         status={summaryState.status}
         sections={'sections' in summaryState ? summaryState.sections : undefined}
@@ -229,6 +259,7 @@ export default function CampgroundDetailPage() {
           ) : undefined
         }
       />
+      )}
 
       <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm space-y-4">
         <h3 className="text-lg font-medium text-gray-900">About</h3>
@@ -264,7 +295,14 @@ export default function CampgroundDetailPage() {
         </div>
       </section>
 
-      {isApiAvailable() && (isWatchable(campground.reservationUrl) || flybookWatch) && (
+      {!isAuthenticated && (isWatchable(campground.reservationUrl) || flybookWatch) && (
+        <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm space-y-3">
+          <h3 className="text-lg font-medium text-gray-900">Watch for cancellations</h3>
+          <SignInPrompt action="watch this campground for cancellations" />
+        </section>
+      )}
+
+      {isAuthenticated && isApiAvailable() && (isWatchable(campground.reservationUrl) || flybookWatch) && (
         <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm space-y-3">
           <h3 className="text-lg font-medium text-gray-900">Watch for cancellations</h3>
           {watchCreated ? (
