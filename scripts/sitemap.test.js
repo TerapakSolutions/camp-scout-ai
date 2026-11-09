@@ -36,7 +36,7 @@ describe('generate-sitemap.mjs', () => {
     expect(sitemap).toContain('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
     expect(sitemap).toContain('<loc>https://campscout.terapak.com/</loc>')
     expect(sitemap).toContain('<loc>https://campscout.terapak.com/campgrounds</loc>')
-    expect(sitemap).toContain('<loc>https://campscout.terapak.com/retrieval</loc>')
+    expect(sitemap).not.toContain('/retrieval')
     expect(sitemap).toContain('<loc>https://campscout.terapak.com/support</loc>')
 
     for (const campground of campgrounds) {

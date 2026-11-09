@@ -15,12 +15,19 @@ Generation runs after every `npm run build` and `npm run build:fly` via `scripts
 
 - `/` (home)
 - `/campgrounds`
-- `/retrieval`
 - `/support`
 - `/campgrounds/{id}` for each campground in `src/data/campgrounds.js`
 
+These are the pages a signed-out visitor (and Googlebot) can browse. The allow-list lives in
+`src/AppRoutes.jsx` (`isPublicPath`); every other route shows the sign-in screen when signed out.
+Each public page sets its own `<title>`, meta description and absolute `<link rel="canonical">`
+client-side (`src/utils/seo.js`). Gated routes and unknown campground ids set
+`<meta name="robots" content="noindex">` and no canonical.
+
 ### Excluded routes
 
+- `/retrieval` (sign-in required)
+- `/watches` (sign-in required)
 - `/settings`
 - `/donation-success`
 - `/donation-cancel`

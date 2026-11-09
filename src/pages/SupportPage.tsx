@@ -1,7 +1,17 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import DonationCard from '../components/DonationCard'
+import { applyPageSeo, SITE_NAME } from '../utils/seo'
 
 export default function SupportPage() {
+  useEffect(() => {
+    applyPageSeo({
+      title: `Support CampScout.ai — ${SITE_NAME}`,
+      description:
+        'CampScout.ai is free for everyone. Support hosting, campground data and future improvements.',
+      path: '/support',
+    })
+  }, [])
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div>
