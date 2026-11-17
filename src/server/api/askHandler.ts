@@ -3,6 +3,7 @@
  * Server-only; never import from React client code.
  */
 
+import { resolveActiveModel } from '../ai/aiProviderConfig.js'
 import type { ApiErrorResponse, AskRequest, AskResponse } from '../../shared/types/api.js'
 import { generateGroundedAnswer } from '../rag/groundedAnswerGenerator.js'
 import { mapOpenAiErrorToHttpResponse } from '../openai/mapOpenAiHttpError.js'
@@ -111,7 +112,7 @@ export async function handleAskRequest(body: unknown, options: AskHandlerOptions
     return mapOpenAiErrorToHttpResponse(error, {
       scope: 'handleAskRequest.openAiResponseError',
       provider: configuredProvider === 'openai' ? 'openai' : 'fake',
-      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      model: resolveActiveModel(),
       unavailableMessage: 'Answer generation is not available.',
       failedMessage: 'Answer generation failed. Please try again.',
     })

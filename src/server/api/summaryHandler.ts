@@ -3,6 +3,7 @@
  * Server-only; never import from React client code.
  */
 
+import { resolveActiveModel } from '../ai/aiProviderConfig.js'
 import type { ApiErrorResponse, SummaryRequest, SummaryResponse } from '../../shared/types/api.js'
 import { getCampgroundSummary } from '../rag/campgroundSummaryService.js'
 import { mapOpenAiErrorToHttpResponse } from '../openai/mapOpenAiHttpError.js'
@@ -101,7 +102,7 @@ export async function handleSummaryRequest(
     return mapOpenAiErrorToHttpResponse(error, {
       scope: 'handleSummaryRequest.openAiResponseError',
       provider: configuredProvider === 'openai' ? 'openai' : 'fake',
-      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      model: resolveActiveModel(),
       unavailableMessage: 'Summary generation is not available.',
       failedMessage: 'Summary generation failed. Please try again.',
     })

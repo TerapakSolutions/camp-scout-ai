@@ -3,6 +3,9 @@
 # Secrets:
 #   fly secrets set CAMP_SCOUT_API_TOKEN=...
 #   fly secrets set AI_ENABLED=true OPENAI_ANSWER_PROVIDER=openai OPENAI_API_KEY=... OPENAI_MODEL=gpt-4o-mini
+#   Gemini (Vertex AI): AI_PROVIDER=gemini GEMINI_MODEL GOOGLE_CLOUD_PROJECT VERTEX_LOCATION
+#     GOOGLE_APPLICATION_CREDENTIALS_JSON — names only; values are secrets. OPENAI_ANSWER_PROVIDER=openai
+#     stays set (it is the live/fake gate); AI_PROVIDER picks the vendor, unset = OpenAI (rollback).
 #   fly secrets set STRIPE_SECRET_KEY=... STRIPE_PUBLISHABLE_KEY=... STRIPE_PRICE_5=... STRIPE_PRICE_10=... STRIPE_PRICE_25=...
 #   fly secrets set APP_URL=https://campscout.terapak.com
 #   Availability watcher (SMS alerts): fly secrets set TWILIO_ACCOUNT_SID=... TWILIO_AUTH_TOKEN=... TWILIO_FROM_NUMBER=+1...
@@ -25,6 +28,8 @@ primary_region = 'sjc'
   # is the source of truth. Live guardrails: AI_ENABLED=true, provider=openai,
   # AI_DAILY_BUDGET_USD=1.00, AI_MAX_REQUEST_COST_USD=0.01, AI_MAX_PROMPT_TOKENS=2500,
   # OPENAI_MODEL=gpt-4o-mini. Unset the secret → code defaults to fake/disabled (safe).
+  # Vendor: AI_PROVIDER (secret; unset = openai, `gemini` = Vertex via GEMINI_MODEL,
+  # GOOGLE_CLOUD_PROJECT, VERTEX_LOCATION, GOOGLE_APPLICATION_CREDENTIALS_JSON). Do not add it here.
   # SQLite lives on the /data volume (durable AI budget accounting + watches).
   DATABASE_PATH = '/data/campscout.sqlite'
   # Availability watcher: in-process scheduler that polls Recreation.gov for

@@ -353,9 +353,10 @@ export function getBudgetUsage(now = new Date()) {
 export function buildRequestRecord(params) {
   const inputTokens = params.promptTokenEstimate ?? 0
   const outputTokens = params.completionTokens ?? 0
+  const now = new Date()
 
   return {
-    timestamp: new Date().toISOString(),
+    timestamp: now.toISOString(),
     endpoint: params.endpoint,
     requestId: params.requestId,
     correlationId: params.correlationId,
@@ -368,7 +369,8 @@ export function buildRequestRecord(params) {
     authenticatedUser: params.authenticatedUser ?? 'anonymous',
     responseStatus: params.responseStatus,
     estimatedCostUsd: params.provider === 'openai'
-      ? estimateRequestCost(inputTokens, outputTokens)
+      // Priced by the model that served it (no model → the configured active model).
+      ? estimateRequestCost(inputTokens, outputTokens, params.model, now)
       : 0,
     cacheHit: params.cacheHit,
   }

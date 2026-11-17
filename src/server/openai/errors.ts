@@ -10,6 +10,18 @@ export class MissingOpenAiApiKeyError extends Error {
   }
 }
 
+/**
+ * AI_PROVIDER=gemini without its project or credentials. A subclass of the missing-key error on
+ * purpose: every handler already answers that with a safe 503 "not available", so a missing Gemini
+ * setting behaves exactly like a missing OpenAI key. Messages name settings, never their values.
+ */
+export class MissingGeminiConfigError extends MissingOpenAiApiKeyError {
+  constructor(message = 'Gemini is not configured.') {
+    super(message)
+    this.name = 'MissingGeminiConfigError'
+  }
+}
+
 export interface OpenAiResponseErrorDetails {
   status?: number
   errorCode?: string
@@ -33,6 +45,11 @@ export function isOpenAiQuotaExceededError(error: unknown): boolean {
   }
 
   if (error.errorCode === 'insufficient_quota') {
+    return true
+  }
+
+  // Vertex AI (Gemini): a 429 whose `error.status` is RESOURCE_EXHAUSTED is quota / capacity.
+  if (error.errorCode === 'RESOURCE_EXHAUSTED') {
     return true
   }
 
