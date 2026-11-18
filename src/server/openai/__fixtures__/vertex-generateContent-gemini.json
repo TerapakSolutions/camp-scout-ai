@@ -1,0 +1,38 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {
+            "text": "Store all food in the bear box at your site [1]."
+          }
+        ]
+      },
+      "finishReason": "STOP",
+      "avgLogprobs": -0.02367757260799408
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 14,
+    "candidatesTokenCount": 5,
+    "totalTokenCount": 37,
+    "thoughtsTokenCount": 18,
+    "trafficType": "ON_DEMAND",
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 14
+      }
+    ],
+    "candidatesTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 5
+      }
+    ]
+  },
+  "modelVersion": "gemini-3.8-flash",
+  "createTime": "2026-09-05T22:02:04.552985Z",
+  "responseId": "XJGcapngIfyEm9IPhdLfyQg"
+}

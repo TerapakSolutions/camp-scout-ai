@@ -3,10 +3,12 @@
  * Server-only; never import from React client code.
  */
 
+import { resolveActiveModel } from '../ai/aiProviderConfig.js'
 import type { ApiErrorResponse, SummaryRequest, SummaryResponse } from '../../shared/types/api.js'
 import { getCampgroundSummary } from '../rag/campgroundSummaryService.js'
 import { mapOpenAiErrorToHttpResponse } from '../openai/mapOpenAiHttpError.js'
 import type { AnswerProvider } from '../openai/answerProvider.js'
+import type { BilledUsage } from '../openai/errors.js'
 import type { AnswerProviderName } from '../openai/createAnswerProvider.js'
 import { validateSummaryRequestGuardrails } from './requestGuardrails.js'
 
@@ -35,6 +37,8 @@ export interface SummaryHandlerOptions {
 export interface SummaryHttpResponse {
   statusCode: number
   body: SummaryResponse | ApiErrorResponse
+  /** A failed call's billed tokens, for the usage record only (see mapOpenAiHttpError). */
+  billedUsage?: BilledUsage
 }
 
 export function validateSummaryRequestBody(body: unknown): SummaryValidationResult {
@@ -101,7 +105,7 @@ export async function handleSummaryRequest(
     return mapOpenAiErrorToHttpResponse(error, {
       scope: 'handleSummaryRequest.openAiResponseError',
       provider: configuredProvider === 'openai' ? 'openai' : 'fake',
-      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      model: resolveActiveModel(),
       unavailableMessage: 'Summary generation is not available.',
       failedMessage: 'Summary generation failed. Please try again.',
     })

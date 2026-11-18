@@ -4,6 +4,7 @@
  * Server-only; never import from React client code.
  */
 
+import { resolveActiveModel } from '../ai/aiProviderConfig.js'
 import type {
   AskInsufficientResponse,
   AskSuccessResponse,
@@ -291,7 +292,7 @@ export async function generateGroundedAnswer({
     protectedAccess,
   })
   const resolvedMaxOutputTokens = resolveMaxOutputTokens(maxOutputTokens)
-  const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini'
+  const model = resolveActiveModel()
 
   logOpenAiDiagnostic('generateGroundedAnswer.request', {
     provider: providerInstance.name,

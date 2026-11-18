@@ -445,7 +445,11 @@ export function createAskRouteMiddleware(options: AskRouteMiddlewareOptions = {}
           ? await handleSummaryRequest(body, handlerOptions)
           : await handleAskRequest(body, handlerOptions)
 
-      const tokenMetrics = extractTokenMetricsFromResponse(response.body)
+      // A failed call can still be billed (Gemini thinking used the whole output budget and
+      // returned no text): its usage arrives beside the body, so the budget counts the real cost.
+      const tokenMetrics = response.billedUsage
+        ? { ...extractTokenMetricsFromResponse(response.body), ...response.billedUsage }
+        : extractTokenMetricsFromResponse(response.body)
       sendJsonResponse(res, response.statusCode, response.body, { correlationId })
 
       finalizeAiRequest({

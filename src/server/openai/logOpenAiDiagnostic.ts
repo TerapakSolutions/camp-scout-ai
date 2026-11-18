@@ -3,6 +3,8 @@
  * Never logs secrets such as API keys.
  */
 
+import { resolveActiveModel } from '../ai/aiProviderConfig.js'
+
 export interface OpenAiDiagnosticDetails {
   provider?: string
   explicitProvider?: string | null
@@ -76,5 +78,11 @@ export function logOpenAiEnvDiagnostic(scope: string): void {
     OPENAI_MODEL: model,
     OPENAI_BASE_URL: baseUrl,
     OPENAI_API_KEY: describeOpenAiApiKey(apiKey),
+    // Gemini (AI_PROVIDER=gemini): names and presence only, never credential values.
+    AI_PROVIDER: process.env.AI_PROVIDER ?? '(unset, default openai)',
+    activeModel: resolveActiveModel(),
+    GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT ? '(configured)' : '(missing)',
+    VERTEX_LOCATION: process.env.VERTEX_LOCATION ?? '(unset, default global)',
+    GOOGLE_APPLICATION_CREDENTIALS_JSON: process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ? '(configured)' : '(missing)',
   })
 }
