@@ -8,6 +8,7 @@ import type { ApiErrorResponse, AskRequest, AskResponse } from '../../shared/typ
 import { generateGroundedAnswer } from '../rag/groundedAnswerGenerator.js'
 import { mapOpenAiErrorToHttpResponse } from '../openai/mapOpenAiHttpError.js'
 import type { AnswerProvider } from '../openai/answerProvider.js'
+import type { BilledUsage } from '../openai/errors.js'
 import type { AnswerProviderName } from '../openai/createAnswerProvider.js'
 import { validateAskRequestGuardrails } from './requestGuardrails.js'
 
@@ -37,6 +38,8 @@ export interface AskHandlerOptions {
 export interface AskHttpResponse {
   statusCode: number
   body: AskResponse | ApiErrorResponse
+  /** A failed call's billed tokens, for the usage record only (see mapOpenAiHttpError). */
+  billedUsage?: BilledUsage
 }
 
 export function validateAskRequestBody(body: unknown): AskValidationResult {

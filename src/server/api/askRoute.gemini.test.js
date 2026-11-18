@@ -20,6 +20,8 @@ import { resetAiOperationsState } from '../ai/aiOperations.js'
 import { resetBudgetLogState } from '../ai/aiBudget.js'
 import { __resetGoogleTokenCacheForTests } from '../openai/googleServiceAccountAuth.js'
 import { OPENAI_QUOTA_EXCEEDED_MESSAGE } from '../openai/mapOpenAiHttpError.js'
+import { clearSummaryCache } from '../rag/campgroundSummaryCache.js'
+import { __resetSummariesForTests } from '../db/summaryRepository.js'
 
 const FIXTURE = JSON.parse(
   fs.readFileSync(path.join(__dirname, '..', 'openai', '__fixtures__', 'vertex-generateContent-gemini.json'), 'utf8'),
@@ -115,6 +117,9 @@ beforeEach(() => {
   resetAiOperationsState()
   resetBudgetLogState()
   __resetGoogleTokenCacheForTests()
+  // Summaries are cached in memory AND in SQLite; a cached success would skip the provider call.
+  clearSummaryCache()
+  __resetSummariesForTests()
   jest.spyOn(process.stderr, 'write').mockImplementation(() => true)
 })
 
@@ -236,5 +241,63 @@ describe('/api/summary with AI_PROVIDER=gemini', () => {
     expect(record.model).toBe('gemini-3.8-flash')
     expect(record.completionTokens).toBe(23)
     expect(record.estimatedCostUsd).toBeCloseTo(estimateRequestCost(14, 23, 'gemini-3.8-flash'), 12)
+  })
+})
+
+describe('a billed Gemini call that returns no answer text', () => {
+  // Thinking used the whole output budget: Vertex answers 200, bills prompt + thoughts, returns no
+  // text. Usage shape = the captured envelope's keys; the counts are Tier 2's measured case.
+  const maxTokensNoText = {
+    candidates: [{ content: { role: 'model', parts: [] }, finishReason: 'MAX_TOKENS' }],
+    usageMetadata: { promptTokenCount: 2400, thoughtsTokenCount: 1824, totalTokenCount: 4224, trafficType: 'ON_DEMAND' },
+    modelVersion: 'gemini-3.8-flash',
+    createTime: '2026-09-05T22:02:04.552985Z',
+    responseId: 'XJGcapngIfyEm9IPhdLfyQg',
+  }
+
+  it('is recorded at its real cost (prompt + thinking) even though the user gets an error', async () => {
+    mockGoogle(jsonResponse(200, maxTokensNoText))
+
+    const { statusCode, payload } = await ask()
+
+    expect(statusCode).toBe(502)
+    // The usage rides outside the client-facing body.
+    for (const key of ['billedUsage', 'inputTokens', 'outputTokens', 'model']) {
+      expect(payload).not.toHaveProperty(key)
+    }
+
+    const [record] = getAllRecords()
+    expect(record.model).toBe('gemini-3.8-flash')
+    expect(record.promptTokenEstimate).toBe(2400)
+    expect(record.completionTokens).toBe(1824)
+    expect(record.estimatedCostUsd).toBeCloseTo(estimateRequestCost(2400, 1824, 'gemini-3.8-flash'), 12)
+    expect(record.estimatedCostUsd).toBeGreaterThan(0)
+  })
+
+  it('counts against the daily budget, so the next request is blocked before reaching Vertex', async () => {
+    // One such call costs ~$0.0086; the budget is below that.
+    process.env.AI_DAILY_BUDGET_USD = '0.005'
+    const fetchMock = mockGoogle(jsonResponse(200, maxTokensNoText))
+
+    const first = await ask()
+    expect(first.statusCode).toBe(502)
+    expect(vertexCalls(fetchMock)).toHaveLength(1)
+
+    const second = await ask()
+    expect(second.statusCode).toBe(503)
+    expect(second.payload.error).toContain('budget')
+    expect(vertexCalls(fetchMock)).toHaveLength(1)
+  })
+
+  it('is recorded at its real cost on /api/summary too', async () => {
+    mockGoogle(jsonResponse(200, maxTokensNoText))
+
+    const middleware = createAskRouteMiddleware({ persistAudit: false })
+    const { res, state } = createMockResponse()
+    await middleware(createMockRequest({ campgroundId: 'yosemite-upper-pines' }, SUMMARY_ROUTE_PATH), res, jest.fn())
+
+    expect(state.statusCode).toBe(502)
+    const [record] = getAllRecords()
+    expect(record.estimatedCostUsd).toBeCloseTo(estimateRequestCost(2400, 1824, 'gemini-3.8-flash'), 12)
   })
 })

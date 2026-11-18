@@ -9,7 +9,7 @@
 
 import { resolveGeminiModel } from '../ai/aiProviderConfig.js'
 import type { AnswerProvider } from './answerProvider.js'
-import { MissingGeminiConfigError, OpenAiResponseError } from './errors.js'
+import { MissingGeminiConfigError, OpenAiResponseError, type BilledUsage } from './errors.js'
 import { getServiceAccountAccessToken } from './googleServiceAccountAuth.js'
 import { logOpenAiDiagnostic } from './logOpenAiDiagnostic.js'
 import {
@@ -178,7 +178,11 @@ export function createGeminiAnswerProvider(options: GeminiAnswerProviderOptions 
         ? await options.getAccessToken()
         : await getServiceAccountAccessToken(config.credentialsJson, { fetchImpl })
 
-      const fail = (scope: string, message: string, details: { status?: number, errorCode?: string } = {}) => {
+      const fail = (
+        scope: string,
+        message: string,
+        details: { status?: number, errorCode?: string, billedUsage?: BilledUsage } = {},
+      ) => {
         logOpenAiDiagnostic(`gemini.generateAnswer.${scope}`, {
           provider: 'gemini',
           model,
@@ -229,7 +233,16 @@ export function createGeminiAnswerProvider(options: GeminiAnswerProviderOptions 
         const message = finishReason === 'MAX_TOKENS'
           ? 'Gemini used its whole output budget (thinking included) before answering.'
           : `Gemini returned an empty answer (finishReason=${finishReason}).`
-        throw fail('emptyAnswer', message, { status: response.status, errorCode: finishReason })
+        // Still billed: prompt + thinking. Carry the usage so the budget records the real cost.
+        const usage = payload?.usageMetadata
+        const billedUsage: BilledUsage | undefined = usage && typeof usage === 'object'
+          ? {
+            inputTokens: typeof usage.promptTokenCount === 'number' ? usage.promptTokenCount : undefined,
+            outputTokens: billableOutputTokens(usage),
+            model: nonEmpty(payload?.modelVersion) ?? model,
+          }
+          : undefined
+        throw fail('emptyAnswer', message, { status: response.status, errorCode: finishReason, billedUsage })
       }
 
       const usage = payload?.usageMetadata

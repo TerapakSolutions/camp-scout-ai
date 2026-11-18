@@ -8,6 +8,7 @@ import type { ApiErrorResponse, SummaryRequest, SummaryResponse } from '../../sh
 import { getCampgroundSummary } from '../rag/campgroundSummaryService.js'
 import { mapOpenAiErrorToHttpResponse } from '../openai/mapOpenAiHttpError.js'
 import type { AnswerProvider } from '../openai/answerProvider.js'
+import type { BilledUsage } from '../openai/errors.js'
 import type { AnswerProviderName } from '../openai/createAnswerProvider.js'
 import { validateSummaryRequestGuardrails } from './requestGuardrails.js'
 
@@ -36,6 +37,8 @@ export interface SummaryHandlerOptions {
 export interface SummaryHttpResponse {
   statusCode: number
   body: SummaryResponse | ApiErrorResponse
+  /** A failed call's billed tokens, for the usage record only (see mapOpenAiHttpError). */
+  billedUsage?: BilledUsage
 }
 
 export function validateSummaryRequestBody(body: unknown): SummaryValidationResult {

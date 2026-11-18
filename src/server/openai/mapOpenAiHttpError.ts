@@ -4,6 +4,7 @@
 
 import type { ApiErrorResponse } from '../../shared/types/api.js'
 import {
+  type BilledUsage,
   MissingOpenAiApiKeyError,
   OpenAiResponseError,
   isOpenAiQuotaExceededError,
@@ -24,6 +25,8 @@ export interface MapOpenAiErrorOptions {
 export interface HttpErrorResponse {
   statusCode: number
   body: ApiErrorResponse
+  /** Tokens the failed call was billed for; for the usage record only, never in `body`. */
+  billedUsage?: BilledUsage
 }
 
 export function mapOpenAiErrorToHttpResponse(error: unknown, options: MapOpenAiErrorOptions): HttpErrorResponse {
@@ -43,16 +46,20 @@ export function mapOpenAiErrorToHttpResponse(error: unknown, options: MapOpenAiE
       errorMessage: error.message,
     })
 
+    const billed = error.billedUsage ? { billedUsage: error.billedUsage } : {}
+
     if (isOpenAiQuotaExceededError(error)) {
       return {
         statusCode: 503,
         body: { error: OPENAI_QUOTA_EXCEEDED_MESSAGE },
+        ...billed,
       }
     }
 
     return {
       statusCode: 502,
       body: { error: options.failedMessage },
+      ...billed,
     }
   }
 

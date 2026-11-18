@@ -22,20 +22,33 @@ export class MissingGeminiConfigError extends MissingOpenAiApiKeyError {
   }
 }
 
+/**
+ * Tokens a FAILED call was still billed for (e.g. Gemini thinking used the whole output budget and
+ * returned no text). Carried to the usage record so the daily budget counts it; never sent to clients.
+ */
+export interface BilledUsage {
+  inputTokens?: number
+  outputTokens?: number
+  model?: string
+}
+
 export interface OpenAiResponseErrorDetails {
   status?: number
   errorCode?: string
+  billedUsage?: BilledUsage
 }
 
 export class OpenAiResponseError extends Error {
   status?: number
   errorCode?: string
+  billedUsage?: BilledUsage
 
   constructor(message: string, details: OpenAiResponseErrorDetails = {}) {
     super(message)
     this.name = 'OpenAiResponseError'
     this.status = details.status
     this.errorCode = details.errorCode
+    this.billedUsage = details.billedUsage
   }
 }
 

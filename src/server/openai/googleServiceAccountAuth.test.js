@@ -8,7 +8,6 @@
 import { createVerify, generateKeyPairSync } from 'crypto'
 import { MissingGeminiConfigError, OpenAiResponseError } from './errors.js'
 import {
-  VERTEX_OAUTH_SCOPE,
   __resetGoogleTokenCacheForTests,
   getServiceAccountAccessToken,
   parseServiceAccountJson,
@@ -81,7 +80,8 @@ describe('getServiceAccountAccessToken', () => {
     const iat = Math.floor(now.getTime() / 1000)
     expect(decodeSegment(claims)).toEqual({
       iss: SA.client_email,
-      scope: VERTEX_OAUTH_SCOPE,
+      // The literal, not the imported constant: a wrong constant must turn this red.
+      scope: 'https://www.googleapis.com/auth/cloud-platform',
       aud: 'https://oauth2.googleapis.com/token',
       iat,
       exp: iat + 3600,
@@ -106,6 +106,22 @@ describe('getServiceAccountAccessToken', () => {
 
     clock += 2 * 60 * 1000
     expect(await getServiceAccountAccessToken(SA_JSON, { fetchImpl, now })).toBe('ya29.second')
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('keys the cache by the private key too: two keys for the same client_email each get their own exchange', async () => {
+    const { privateKey: otherKey } = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    })
+    const rotatedJson = JSON.stringify({ ...SA, private_key: otherKey })
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce(tokenResponse('ya29.old-key'))
+      .mockResolvedValueOnce(tokenResponse('ya29.new-key'))
+
+    expect(await getServiceAccountAccessToken(SA_JSON, { fetchImpl })).toBe('ya29.old-key')
+    expect(await getServiceAccountAccessToken(rotatedJson, { fetchImpl })).toBe('ya29.new-key')
     expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
